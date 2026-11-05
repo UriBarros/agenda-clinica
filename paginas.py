@@ -146,7 +146,9 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
         itens = "".join(f"<a class='cartao' style='display:block;text-decoration:none' href='{base}?servico={s['id']}'><b>{e(s['nome'])}</b>"
                         f"<div class='mudo'>{s['duracao_min']} min {e(brl(s['preco_centavos']))}</div></a>" for s in info["servicos"])
         return pagina(f"Agendar — {c['nome']}", f"<h1>Qual serviço?</h1>{_erro(erro)}<div class='grade'>{itens or '<p>Esta clínica ainda não cadastrou serviços.</p>'}</div>",
-                      indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav)
+                      # A /agendar BASE é indexável (decisão do dono: "indexa tudo"); com parâmetro (serviço, horário) ou erro
+                      # é combinação infinita de URLs sem conteúdo próprio, e a página do paciente (/m/) é dado pessoal: noindex.
+                      indexar=not q and not erro, marca=c["nome"], home=f"/c/{slug}", nav=nav)
     if q.get("hora") and q.get("data") and q.get("profissional"):
         p = profs.get(int(q["profissional"])) if q["profissional"].isascii() and q["profissional"].isdigit() else None
         loc = next((h for h in horarios if h["data"] == q["data"] and h["hora"] == q["hora"] and str(h["profissional_id"]) == q["profissional"]), None)

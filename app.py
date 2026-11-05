@@ -332,7 +332,8 @@ def fazer_handler(app: App):
             if caminho == "/robots.txt":
                 return self._enviar(200, f"User-agent: *\nAllow: /\nDisallow: /painel\nDisallow: /api/\nDisallow: /m/\nSitemap: {base}/sitemap.xml\n", "text/plain")
             if caminho == "/sitemap.xml":
-                urls = ["", "/docs", "/privacidade"] + [f"/c/{r['slug']}" for r in app.bd.ler("select slug from clinicas where listada=1 order by id limit 5000")]
+                slugs = [r["slug"] for r in app.bd.ler("select slug from clinicas where listada=1 order by id limit 5000")]
+                urls = ["", "/docs", "/privacidade"] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
                 return self._enviar(200, '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
                                     + "".join(f"<url><loc>{pg.e(base + u)}</loc></url>" for u in urls) + "</urlset>", "application/xml")
             if caminho == "/openapi.json" and metodo == "GET":

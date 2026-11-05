@@ -249,3 +249,14 @@ def test_metricas_do_lancamento_ignoram_a_demo_e_separam_web_api_e_mcp(srv):
     n.agendar(a.bd, row, sv, pr, proxima(1, 3), "09:30", "Joao", "48999990002", origem="web", consentimento=True)
     assert ap.metricas(a.bd) == {"clinicas": 1, "clinicas_com_agenda_montada": 1, "agendamentos_confirmados": 2,
                                  "agendamentos_por_origem": {"mcp": 1, "web": 1}, "chaves_de_api_usadas": 0}
+
+
+def test_agendar_base_e_indexavel_mas_variante_com_parametro_e_pagina_do_paciente_ficam_noindex(srv):
+    """Decisão do dono ("indexa tudo"): a /agendar base entra no índice e no sitemap; combinações infinitas de URL e dado pessoal, não."""
+    porta, a = srv
+    assert 'name="robots"' not in req(porta, "GET", "/c/demo/agendar")[1]
+    assert "/c/demo/agendar" in req(porta, "GET", "/sitemap.xml")[1]
+    c, serv, prof = dados_demo(a)
+    assert 'content="noindex"' in req(porta, "GET", f"/c/demo/agendar?servico={serv}")[1]
+    ag = n.agendar(a.bd, c, serv, prof, proxima(1, 3), "08:00", "Maria", "48999990000", consentimento=True)
+    assert 'content="noindex"' in req(porta, "GET", f"/m/{ag['codigo']}")[1]

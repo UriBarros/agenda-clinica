@@ -14,6 +14,24 @@ Nasceu de um pedido real: *duas profissionais, dois locais, painel com login par
 | **Imagem** | `docker build -t agenda-clinica . && docker run -p 8080:8080 -v agenda:/data agenda-clinica` |
 | **Kubernetes** | um Deployment com 1 réplica, `DATA_DIR` num volume (PVC) e a imagem do `Dockerfile`; sem dependência externa |
 
+## Como usar (do zero ao ar)
+
+**Testar na sua máquina (2 minutos, sem instalar nada além do Python 3.12):**
+
+    git clone https://github.com/thiagopatzdorf/agenda-clinica && cd agenda-clinica
+    DATA_DIR=./data DEMO=1 python3 app.py        # abre em http://localhost:8080, com a clínica de demonstração em /c/demo
+
+**Subir a sua clínica, sem a demonstração:**
+
+1. Rode `docker build -t agenda-clinica . && docker run -p 8080:8080 -v agenda:/data -e BASE_URL=https://agenda.seudominio.com agenda-clinica`.
+   O volume `/data` guarda o banco; sem ele, os dados somem ao reiniciar. Ponha um proxy com HTTPS na frente (o cookie de login é `Secure` fora do localhost).
+2. Abra `/criar`, informe nome, e-mail e senha da clínica e o endereço do site (`/c/<endereço>`).
+3. No `/painel`: cadastre os **locais**, a **equipe** (profissionais), os **serviços** e o **horário semanal** de cada profissional por local.
+4. Compartilhe `/c/<endereço>`. O paciente agenda sem conta e recebe um código para ver, cancelar ou remarcar em `/m/<código>`.
+5. Para um agente de IA operar a agenda, crie uma **chave de API** em `/painel/api` e use o servidor MCP (veja abaixo).
+
+Backup: `python3 app.py backup <arquivo>`. Tirar uma página do índice de busca: `python3 app.py delistar <endereço>`.
+
 ## O que faz
 
 - **Site da clínica** em `/c/<endereço>`: profissionais, serviços, locais, JSON-LD `MedicalClinic` (indexável).
