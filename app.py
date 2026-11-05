@@ -48,6 +48,7 @@ LIMITES_TAXA = {"criar": (5, 3600), "login": (10, 300), "agendar": (20, 3600), "
                 "login_conta": (15, 3600)}
 MAX_LOTE_MCP = 10
 MAX_CONEXOES = 256
+FOTOS: dict[str, bytes] = {}  # as 10 fotos de fundo (~1,3 MB) ficam em memória depois do 1º pedido
 TIMEOUT_SOCKET_S = 15
 
 
@@ -227,6 +228,18 @@ def fazer_handler(app: App):
             self.end_headers()
             self.wfile.write(b)
 
+        def _foto(self, nome: str):
+            # Lista fechada (as fotos do pool), nunca um caminho vindo da URL: `..` ou nome fora do pool é 404, sem tocar o disco.
+            if not nome.endswith(".jpg") or nome[:-4] not in pg.POOL:
+                return self._enviar(404, "não encontrado", "text/plain; charset=utf-8")
+            dados = FOTOS.get(nome)
+            if dados is None:
+                try:
+                    dados = FOTOS.setdefault(nome, (pg.FUNDOS_DIR / nome).read_bytes())
+                except OSError:
+                    return self._enviar(404, "não encontrado", "text/plain; charset=utf-8")
+            self._enviar(200, dados, "image/jpeg", {"Cache-Control": "public, max-age=86400"})
+
         def _json(self, status: int, obj, extra: dict | None = None):
             self._enviar(status, json.dumps(obj, ensure_ascii=False) if obj is not None else "", "application/json; charset=utf-8",
                          {"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store", **(extra or {})})
@@ -333,7 +346,7 @@ def fazer_handler(app: App):
                 return self._enviar(200, f"User-agent: *\nAllow: /\nDisallow: /painel\nDisallow: /api/\nDisallow: /m/\nSitemap: {base}/sitemap.xml\n", "text/plain")
             if caminho == "/sitemap.xml":
                 slugs = [r["slug"] for r in app.bd.ler("select slug from clinicas where listada=1 order by id limit 5000")]
-                urls = ["", "/docs", "/privacidade"] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
+                urls = ["", "/docs", "/privacidade", "/creditos"] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
                 return self._enviar(200, '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
                                     + "".join(f"<url><loc>{pg.e(base + u)}</loc></url>" for u in urls) + "</urlset>", "application/xml")
             if caminho == "/openapi.json" and metodo == "GET":
@@ -344,6 +357,10 @@ def fazer_handler(app: App):
                 return self._enviar(200, pg.docs(base))
             if caminho == "/privacidade":
                 return self._enviar(200, pg.privacidade())
+            if caminho == "/creditos":
+                return self._enviar(200, pg.creditos())
+            if caminho.startswith("/static/fundos/"):
+                return self._foto(caminho[len("/static/fundos/"):])
             if caminho == "/":
                 return self._enviar(200, pg.home(REPO_URL, bool(app.bd.um("select 1 from clinicas where slug='demo'"))))
             if caminho == "/criar" and metodo == "POST":

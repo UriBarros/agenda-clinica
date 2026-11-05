@@ -1,0 +1,82 @@
+{
+ "clinica-clara": {
+  "fonte": "Unsplash",
+  "fotografo": "rawkkim",
+  "pagina": "https://unsplash.com/photos/X8Y3CJA0aNs",
+  "alt": "Sala branca e clara com uma árvore",
+  "cor": "#aaaba1",
+  "licenca": "Licença Unsplash (uso livre)"
+ },
+ "conversa": {
+  "fonte": "Unsplash",
+  "fotografo": "Vitaly Gariev",
+  "pagina": "https://unsplash.com/photos/RqR2pnTpmHA",
+  "alt": "Conversa acolhedora num sofá",
+  "cor": "#7c6e63",
+  "licenca": "Licença Unsplash (uso livre)"
+ },
+ "psicologia": {
+  "fonte": "Unsplash",
+  "fotografo": "Vitaly Gariev",
+  "pagina": "https://unsplash.com/photos/QxkvMblcaJ0",
+  "alt": "Atendimento em consultório moderno",
+  "cor": "#9faaad",
+  "licenca": "Licença Unsplash (uso livre)"
+ },
+ "nutricao": {
+  "fonte": "Unsplash",
+  "fotografo": "Anna Pelzer",
+  "pagina": "https://unsplash.com/photos/IGfIGP5ONV0",
+  "alt": "Prato de vegetais frescos",
+  "cor": "#817655",
+  "licenca": "Licença Unsplash (uso livre)"
+ },
+ "recepcao": {
+  "fonte": "Unsplash",
+  "fotografo": "Yunming Wang",
+  "pagina": "https://unsplash.com/photos/eflLpWC1Geo",
+  "alt": "Sala de espera confortável",
+  "cor": "#939d95",
+  "licenca": "Licença Unsplash (uso livre)"
+ },
+ "acolhimento": {
+  "fonte": "Pexels",
+  "fotografo": "Sami Raad",
+  "pagina": "https://www.pexels.com/pt-br/foto/34016409/",
+  "alt": "Cantinho com poltrona e vela",
+  "cor": "#8f755d",
+  "licenca": "Licença Pexels (uso livre)"
+ },
+ "minimalista": {
+  "fonte": "Pexels",
+  "fotografo": "Letícia Alvares",
+  "pagina": "https://www.pexels.com/pt-br/foto/32922266/",
+  "alt": "Ambiente minimalista em tons suaves",
+  "cor": "#a1907f",
+  "licenca": "Licença Pexels (uso livre)"
+ },
+ "moderna": {
+  "fonte": "Pexels",
+  "fotografo": "Curtis Adams",
+  "pagina": "https://www.pexels.com/pt-br/foto/36777534/",
+  "alt": "Sala moderna com luz natural",
+  "cor": "#b4ab9f",
+  "licenca": "Licença Pexels (uso livre)"
+ },
+ "spa": {
+  "fonte": "Pexels",
+  "fotografo": "Max Vakhtbovych",
+  "pagina": "https://www.pexels.com/pt-br/foto/7031707/",
+  "alt": "Lounge de bem-estar",
+  "cor": "#b1a98e",
+  "licenca": "Licença Pexels (uso livre)"
+ },
+ "consulta": {
+  "fonte": "Pexels",
+  "fotografo": "SHVETS production",
+  "pagina": "https://www.pexels.com/pt-br/foto/8413183/",
+  "alt": "Profissional anotando durante a consulta",
+  "cor": "#adb4b9",
+  "licenca": "Licença Pexels (uso livre)"
+ }
+}

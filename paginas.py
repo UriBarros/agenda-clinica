@@ -6,46 +6,95 @@ celular, no leitor de tela e para o agente que só lê HTML, e a CSP do servidor
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import html
 import json
 import urllib.parse
+from pathlib import Path
 
 import nucleo as n
 import ops
 
 e = html.escape
+
+# Fotos de fundo (Unsplash e Pexels, licenças de uso livre), servidas do NOSSO domínio com crédito (ADR-001): nada de hotlink,
+# nada de terceiro vendo o IP do paciente. Cada clínica ganha uma foto estável pelo endereço dela (mesma entrada, mesma foto).
+FUNDOS_DIR = Path(__file__).resolve().parent / "static" / "fundos"
+POOL = ["acolhimento", "clinica-clara", "consulta", "conversa", "minimalista", "moderna", "nutricao", "psicologia", "recepcao", "spa"]
+try:
+    CREDITOS = json.loads((FUNDOS_DIR.parent / "creditos.json").read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    CREDITOS = {}
+
+
+def fundo_de(chave: str) -> str:
+    return POOL[int(hashlib.sha256(str(chave).encode()).hexdigest(), 16) % len(POOL)]
 DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]
 CSS = """
-:root{--bg:#f6f8f8;--cartao:#fff;--tinta:#16302f;--mudo:#587170;--linha:#d8e3e2;--c:#0f766e;--c2:#0b5a54;--aviso:#fff4d6;--erro:#b42318;--ok:#067647}
-@media(prefers-color-scheme:dark){:root{--bg:#0e1a19;--cartao:#142423;--tinta:#e6f1f0;--mudo:#93aeac;--linha:#27403e;--c:#2dd4bf;--c2:#5eead4;--aviso:#3b3115;--erro:#f97066;--ok:#47cd89}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tinta);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-a{color:var(--c)}main{max-width:900px;margin:0 auto;padding:20px 16px 56px}h1{font-size:1.9rem;line-height:1.2;margin:.2em 0}h2{font-size:1.25rem;margin:1.6em 0 .5em}
-header.topo{background:var(--cartao);border-bottom:1px solid var(--linha)}header.topo div{max-width:900px;margin:0 auto;padding:12px 16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-header.topo b{font-size:1.05rem;margin-right:auto}header.topo a{text-decoration:none;font-weight:600}
-.cartao{background:var(--cartao);border:1px solid var(--linha);border-radius:14px;padding:16px;margin:12px 0}.grade{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
-.mudo{color:var(--mudo);font-size:.92rem}.hero{padding:28px 0 8px}.hero p{font-size:1.12rem;max-width:640px}
-.btn,button{display:inline-block;background:var(--c);color:#fff;border:0;border-radius:10px;padding:11px 18px;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
-@media(prefers-color-scheme:dark){.btn,button{color:#04211e}}.sec{background:transparent!important;color:var(--c)!important;border:1px solid var(--c)}.perigo{background:transparent!important;color:var(--erro)!important;border:1px solid var(--erro)}
-label{display:block;margin:10px 0 4px;font-weight:600;font-size:.95rem}input,select,textarea{width:100%;padding:10px;border:1px solid var(--linha);border-radius:10px;background:var(--bg);color:var(--tinta);font:inherit}
+:root{--bg:#f1f6f5;--cartao:#fff;--tinta:#10292a;--mudo:#587170;--linha:#d6e3e1;--c:#0f766e;--c2:#0b5a54;--aviso:#fff4d6;--erro:#b42318;--ok:#067647;
+--vidro:rgba(247,251,250,.86);--vidro-borda:rgba(255,255,255,.7);--sombra:0 24px 60px rgba(6,32,32,.22)}
+@media(prefers-color-scheme:dark){:root{--bg:#0a1514;--cartao:#112221;--tinta:#e6f1f0;--mudo:#93aeac;--linha:#27403e;--c:#2dd4bf;--c2:#5eead4;--aviso:#3b3115;--erro:#f97066;--ok:#47cd89;
+--vidro:rgba(10,22,21,.80);--vidro-borda:rgba(255,255,255,.10);--sombra:0 24px 60px rgba(0,0,0,.5)}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tinta);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--c)}main{max-width:920px;margin:0 auto;padding:22px 16px 56px}h1{font-size:clamp(1.9rem,5vw,2.4rem);line-height:1.15;letter-spacing:-.02em;margin:.2em 0}h2{font-size:1.3rem;letter-spacing:-.01em;margin:1.7em 0 .5em}
+header.topo{background:var(--cartao);border-bottom:1px solid var(--linha)}header.topo div{max-width:1040px;margin:0 auto;padding:14px 18px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+header.topo b{font-size:1.08rem;letter-spacing:-.01em;margin-right:auto}header.topo a{text-decoration:none;font-weight:600}
+.cartao{background:var(--cartao);border:1px solid var(--linha);border-radius:18px;padding:18px;margin:12px 0;box-shadow:0 1px 2px rgba(6,32,32,.04)}.grade{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.mudo{color:var(--mudo);font-size:.93rem}
+.btn,button{display:inline-block;background:linear-gradient(135deg,var(--c),var(--c2));color:#fff;border:0;border-radius:14px;padding:12px 20px;font:inherit;font-weight:700;text-decoration:none;cursor:pointer;box-shadow:0 8px 20px rgba(15,118,110,.28);transition:transform .15s,box-shadow .15s}
+.btn:hover,button:hover{transform:translateY(-1px);box-shadow:0 12px 26px rgba(15,118,110,.34)}.btn.grande{padding:15px 28px;font-size:1.08rem;border-radius:16px}
+@media(prefers-color-scheme:dark){.btn,button{color:#04211e}}.sec{background:transparent!important;color:var(--c)!important;border:1.5px solid var(--c);box-shadow:none!important}.perigo{background:transparent!important;color:var(--erro)!important;border:1.5px solid var(--erro);box-shadow:none!important}
+label{display:block;margin:12px 0 5px;font-weight:600;font-size:.95rem}input,select,textarea{width:100%;padding:12px;border:1.5px solid var(--linha);border-radius:12px;background:var(--bg);color:var(--tinta);font:inherit}
+input:focus,select:focus,textarea:focus{outline:3px solid color-mix(in srgb,var(--c) 35%,transparent);border-color:var(--c)}
 input[type=checkbox]{width:auto}.linha{display:flex;gap:10px;flex-wrap:wrap;align-items:end}.linha>*{flex:1 1 140px}.linha .fixo{flex:0 0 auto}
-.horas{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px}.horas a,.horas button{padding:8px 13px;border-radius:9px;background:var(--cartao);color:var(--c);border:1px solid var(--c);text-decoration:none;font-weight:600}
-.aviso{background:var(--aviso);border-radius:12px;padding:12px 14px;margin:12px 0}.erro{color:var(--erro);font-weight:600}.ok{color:var(--ok);font-weight:600}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--linha);vertical-align:top}th{font-size:.85rem;color:var(--mudo)}
-code,pre{background:var(--cartao);border:1px solid var(--linha);border-radius:8px;padding:2px 6px;font-size:.88rem}pre{padding:12px;overflow:auto}
-.pill{display:inline-block;border-radius:99px;padding:1px 9px;font-size:.8rem;border:1px solid var(--linha)}footer{margin-top:40px;color:var(--mudo);font-size:.88rem}
+.horas{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 16px}.horas a,.horas button{padding:9px 15px;border-radius:12px;background:var(--cartao);color:var(--c);border:1.5px solid var(--c);text-decoration:none;font-weight:700;box-shadow:none;transition:background .15s,color .15s}
+.horas a:hover{background:var(--c);color:#fff}
+.aviso{background:var(--aviso);border-radius:14px;padding:14px 16px;margin:14px 0}.erro{color:var(--erro);font-weight:600}.ok{color:var(--ok);font-weight:600}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--linha);vertical-align:top}th{font-size:.85rem;color:var(--mudo)}
+code,pre{background:var(--cartao);border:1px solid var(--linha);border-radius:8px;padding:2px 6px;font-size:.88rem}pre{padding:14px;overflow:auto}
+.pill{display:inline-block;border-radius:99px;padding:3px 12px;font-size:.82rem;border:1.5px solid var(--linha);text-decoration:none;margin:2px 0}a.pill:hover{border-color:var(--c)}footer{margin-top:40px;color:var(--mudo);font-size:.88rem}
 form.in{display:inline}.sr{position:absolute;left:-9999px}
+/* ---- imersivo: foto de fundo fixa, herói e folha de vidro */
+.fundo{position:fixed;inset:0;z-index:-2;background:#0b2b2a center/cover no-repeat}
+.fundo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(3,20,22,.42) 0%,rgba(3,20,22,.66) 50%,rgba(3,20,22,.9) 100%)}
+body.vidro .fundo{filter:blur(9px) saturate(1.1);transform:scale(1.07)}body.vidro .fundo::after{background:linear-gradient(180deg,rgba(3,20,22,.5),rgba(3,20,22,.78))}
+body.imersivo header.topo{background:transparent;border:0;position:absolute;left:0;right:0;top:0;z-index:3}body.imersivo header.topo a,body.imersivo header.topo b a{color:#fff!important;text-shadow:0 1px 12px rgba(0,0,0,.5)}
+body.vidro header.topo{background:rgba(3,20,22,.35);backdrop-filter:blur(14px);border:0;position:sticky;top:0;z-index:3}body.vidro header.topo a,body.vidro header.topo b a{color:#fff!important}
+.heroi{min-height:78vh;display:flex;flex-direction:column;justify-content:flex-end;max-width:1040px;margin:0 auto;padding:110px 22px 56px;color:#fff}
+.heroi h1{font-size:clamp(2.3rem,7vw,4rem);line-height:1.05;margin:.15em 0 .3em;text-shadow:0 4px 34px rgba(0,0,0,.5)}.heroi p{font-size:clamp(1.05rem,2.4vw,1.3rem);max-width:640px;margin:.2em 0 1em;text-shadow:0 2px 22px rgba(0,0,0,.5)}
+.heroi .kicker{align-self:flex-start;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);backdrop-filter:blur(8px);border-radius:99px;padding:5px 14px;font-size:.9rem;font-weight:600}
+.heroi .acoes{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}.heroi .btn.sec{color:#fff!important;border-color:rgba(255,255,255,.75)!important;background:rgba(255,255,255,.12)!important;backdrop-filter:blur(8px)}
+.folha{background:var(--vidro);backdrop-filter:blur(22px) saturate(1.25);-webkit-backdrop-filter:blur(22px) saturate(1.25);border:1px solid var(--vidro-borda);border-bottom:0;border-radius:34px 34px 0 0;box-shadow:var(--sombra);max-width:1040px;margin:0 auto;padding:30px 22px 64px}
+.folha.cheia{max-width:760px;margin:26px auto 70px;border-radius:30px;border-bottom:1px solid var(--vidro-borda);padding:26px 22px 34px}
+.folha .cartao{background:color-mix(in srgb,var(--cartao) 88%,transparent)}
+.credito{font-size:11px;color:#fff;opacity:.88;background:rgba(0,0,0,.38);padding:3px 10px;border-radius:99px;white-space:nowrap}.credito a{color:#fff}
+.heroi{position:relative}.heroi .credito{position:absolute;right:16px;bottom:14px}.credito.fim{display:block;width:max-content;margin:-40px auto 24px;position:relative}
+@media(max-width:560px){.heroi{padding-top:90px;min-height:70vh}.folha{border-radius:26px 26px 0 0;padding:22px 14px 56px}}
 """
 
 
 def pagina(titulo: str, corpo: str, *, desc: str = "", canonical: str = "", indexar: bool = True, nav: str = "", marca: str = "agenda-clinica",
-           home: str = "/", extra_head: str = "") -> str:
+           home: str = "/", extra_head: str = "", fundo: str = "", modo: str = "limpo", heroi: str = "") -> str:
+    """`modo`: "limpo" (painel, trabalho), "vidro" (página de tarefa sobre a foto desfocada) ou "heroi" (foto cheia + herói)."""
     meta = f'<meta name="description" content="{e(desc)}">' if desc else ""
     meta += f'<link rel="canonical" href="{e(canonical)}">' if canonical else ""
     meta += "" if indexar else '<meta name="robots" content="noindex">'
+    foto = fundo if (fundo in POOL and modo != "limpo") else ""
+    if foto:
+        meta += f'<link rel="preload" as="image" href="/static/fundos/{foto}.jpg">'
+    cor = CREDITOS.get(foto, {}).get("cor", "#0b2b2a")
+    camada = (f'<div class="fundo" style="background-image:url(/static/fundos/{foto}.jpg);background-color:{e(cor)}"></div>') if foto else ""
+    cr = CREDITOS.get(foto)
+    credito = (f'Foto: <a href="/creditos">{e(cr["fotografo"])}</a> · {e(cr["fonte"])}') if foto and cr else ""
+    cab = (f'<header class="topo"><div><b><a href="{e(home)}" style="color:inherit">{e(marca)}</a></b>{nav}</div></header>')
+    if foto and modo == "heroi":
+        miolo, classe = f'{cab}<section class="heroi">{heroi}<div class="credito">{credito}</div></section><main class="folha">{corpo}</main>', "imersivo"
+    elif foto and modo == "vidro":
+        miolo, classe = f'{cab}<main class="folha cheia">{corpo}</main><div class="credito fim">{credito}</div>', "vidro"
+    else:
+        miolo, classe = f'{cab}<main>{corpo}</main>', ""
     return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>{e(titulo)}</title>{meta}{extra_head}<style>{CSS}</style></head><body>'
-            f'<header class="topo"><div><b><a href="{e(home)}" style="color:inherit">{e(marca)}</a></b>{nav}</div></header>'
-            f'<main>{corpo}</main></body></html>')
+            f'<title>{e(titulo)}</title>{meta}{extra_head}<style>{CSS}</style></head><body class="{classe}">{camada}{miolo}</body></html>')
 
 
 def brl(centavos) -> str:
@@ -65,9 +114,6 @@ def _erro(msg: str) -> str:
 
 def home(repo_url: str, demo: bool, erro: str = "") -> str:
     return pagina("agenda-clinica — site de clínica com agendamento online, grátis e aberto", f"""
-<section class="hero"><h1>Site de clínica com agendamento online. Grátis, de código aberto.</h1>
-<p>Páginas para a clínica e cada profissional, vários locais, agenda por horário livre, painel com login para bloquear a agenda,
-cancelar e remarcar. Sem mensalidade, sem anúncio. E <b>API e servidor MCP</b> para agentes de IA agendarem e gerirem a agenda.</p></section>
 <div class="grade">
 <div class="cartao"><b>Para o paciente</b><p class="mudo">Escolhe serviço, profissional e horário livre no celular, sem criar conta. Recebe um código para consultar, cancelar ou remarcar.</p></div>
 <div class="cartao"><b>Para a clínica</b><p class="mudo">Painel com login: agenda do dia, bloqueio de férias e folgas, cancelar e remarcar, equipe, locais e horários semanais.</p></div>
@@ -81,7 +127,12 @@ cancelar e remarcar. Sem mensalidade, sem anúncio. E <b>API e servidor MCP</b> 
 {'<p><a href="/c/demo">Ver uma clínica de demonstração</a> (dados fictícios; agentes podem testar a API nela).</p>' if demo else ''}
 <footer>Código-fonte: <a href="{e(repo_url)}">{e(repo_url)}</a> · <a href="/privacidade">Privacidade</a></footer>""",
         desc="Site de clínica com agendamento online grátis e de código aberto: profissionais, locais, painel com login, API REST e MCP para agentes.",
-        nav='<a href="/docs">Para agentes</a><a href="/entrar">Entrar</a>')
+        nav='<a href="/docs">Para agentes</a><a href="/entrar">Entrar</a>', fundo="psicologia", modo="heroi",
+        heroi=('<span class="kicker">Grátis · código aberto (MIT)</span><h1>Site de clínica com agendamento online.</h1>'
+               '<p>Páginas para a clínica e cada profissional, vários locais, agenda por horário livre e painel com login para bloquear, cancelar e remarcar. '
+               'Sem mensalidade, sem anúncio. E <b>API e MCP</b> para agentes de IA agendarem.</p>'
+               '<div class="acoes"><a class="btn grande" href="#criar">Criar minha clínica</a>'
+               + ('<a class="btn grande sec" href="/c/demo">Ver a demonstração</a>' if demo else "") + '</div>'))
 
 
 def privacidade() -> str:
@@ -91,7 +142,7 @@ junto da data, do horário, do serviço e do profissional. <b>Não guardamos dad
 <p>Esses dados são visíveis para a clínica em que você agendou e para quem tiver o código da sua consulta. Não são vendidos nem usados para
 publicidade. Para corrigir ou apagar seus dados, peça à clínica; quem opera o serviço atende a clínica pelo e-mail dela.</p>
 <p>A clínica é a controladora dos dados dos próprios pacientes (LGPD, art. 5º, VI); este software é a ferramenta. O código é aberto e pode ser auditado.</p>
-<p>Este sistema <b>não envia mensagens</b> (e-mail ou WhatsApp): quem avisa o paciente de cancelamentos e remarcações é a clínica.</p>""", nav='<a href="/">Início</a>')
+<p>Este sistema <b>não envia mensagens</b> (e-mail ou WhatsApp): quem avisa o paciente de cancelamentos e remarcações é a clínica.</p>""", nav='<a href="/">Início</a>', fundo="clinica-clara", modo="vidro")
 
 
 # ------------------------------------------------------------------ site da clínica
@@ -116,18 +167,17 @@ def site_clinica(info: dict, base: str) -> str:
     servs = "".join(f"<tr><td>{e(s['nome'])}</td><td>{s['duracao_min']} min</td><td>{e(brl(s['preco_centavos']))}</td>"
                     f"<td><a href='/c/{e(c['slug'])}/agendar?servico={s['id']}'>Agendar</a></td></tr>" for s in info["servicos"])
     locs = "".join(f"<div class='cartao'><b>{e(l['nome'])}</b><div class='mudo'>{e(l['endereco'])} {e(l['cidade'])}</div></div>" for l in info["locais"])
-    wa = f"<p><a class='btn sec' href='https://wa.me/{e(_so_digitos(c['telefone']))}'>Falar pelo WhatsApp</a></p>" if _so_digitos(c["telefone"]) else ""
-    return pagina(f"{c['nome']} — agende online", f"""<section class="hero"><h1>{e(c['nome'])}</h1><p>{e(c['descricao'])}</p>
-<p><a class="btn" href="/c/{e(c['slug'])}/agendar">Agendar consulta</a></p></section>
-<h2>Profissionais</h2><div class="grade">{profs or "<p class='mudo'>Em breve.</p>"}</div>
+    return pagina(f"{c['nome']} — agende online", f"""<h2 style="margin-top:.2em">Profissionais</h2><div class="grade">{profs or "<p class='mudo'>Em breve.</p>"}</div>
 <h2>Serviços</h2><div class="cartao"><table><tr><th>Serviço</th><th>Duração</th><th>Valor</th><th></th></tr>{servs}</table></div>
-<h2>Onde atendemos</h2><div class="grade">{locs}</div>{wa}
+<h2>Onde atendemos</h2><div class="grade">{locs}</div>
 <footer>Agendamento por <a href="/">agenda-clinica</a>, software livre.</footer>""",
         desc=f"{c['nome']}{' em ' + c['cidade'] if c['cidade'] else ''}: conheça os profissionais e agende online.",
         canonical=f"{base}/c/{c['slug']}" if c.get("indexavel") else "", indexar=bool(c.get("indexavel")),
         marca=c["nome"], home=f"/c/{c['slug']}",
         extra_head=f'<script type="application/ld+json">{ld}</script>',
-        nav=f'<a href="/c/{e(c["slug"])}/agendar">Agendar</a>')
+        nav=f'<a href="/c/{e(c["slug"])}/agendar">Agendar</a>', fundo=fundo_de(c["slug"]), modo="heroi",
+        heroi=(f'<span class="kicker">{e(c["cidade"]) if c["cidade"] else "Agende online"}</span><h1>{e(c["nome"])}</h1><p>{e(c["descricao"])}</p>'
+               f'<div class="acoes"><a class="btn grande" href="/c/{e(c["slug"])}/agendar">Agendar consulta</a>' + (f'<a class="btn grande sec" href="https://wa.me/{e(_so_digitos(c["telefone"]))}">WhatsApp</a>' if _so_digitos(c["telefone"]) else "") + '</div>'))
 
 
 def _so_digitos(t: str) -> str:
@@ -148,7 +198,7 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
         return pagina(f"Agendar — {c['nome']}", f"<h1>Qual serviço?</h1>{_erro(erro)}<div class='grade'>{itens or '<p>Esta clínica ainda não cadastrou serviços.</p>'}</div>",
                       # A /agendar BASE é indexável (decisão do dono: "indexa tudo"); com parâmetro (serviço, horário) ou erro
                       # é combinação infinita de URLs sem conteúdo próprio, e a página do paciente (/m/) é dado pessoal: noindex.
-                      indexar=not q and not erro, marca=c["nome"], home=f"/c/{slug}", nav=nav)
+                      indexar=not q and not erro, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug), modo="vidro")
     if q.get("hora") and q.get("data") and q.get("profissional"):
         p = profs.get(int(q["profissional"])) if q["profissional"].isascii() and q["profissional"].isdigit() else None
         loc = next((h for h in horarios if h["data"] == q["data"] and h["hora"] == q["hora"] and str(h["profissional_id"]) == q["profissional"]), None)
@@ -164,7 +214,7 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
 <label>E-mail (opcional)<input name="email" type="email" autocomplete="email"></label>
 <p><label style="font-weight:400"><input type="checkbox" name="consentimento" value="1" required> Autorizo a clínica a usar meu nome e telefone para este agendamento
 (<a href="/privacidade">privacidade</a>). Não escreva informações de saúde aqui.</label></p>
-<button>Confirmar</button></form>""", indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav)
+<button>Confirmar</button></form>""", indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug), modo="vidro")
     filtro = q.get("profissional", "")
     links = f"<a class='pill' href='{base}?servico={serv['id']}'>Qualquer profissional</a> " + " ".join(
         f"<a class='pill' href='{base}?servico={serv['id']}&amp;profissional={p['id']}'>{e(p['nome'])}</a>" for p in info["profissionais"])
@@ -179,7 +229,7 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
                   + "".join(f"<a href='{base}?{e(qs(hr))}'>{e(hr)}</a>" for hr in horas) + "</div></div>")
     return pagina(f"Horários — {c['nome']}", f"""<h1>{e(serv['nome'])}</h1><p class="mudo">Próximos 14 dias · {serv['duracao_min']} min</p>
 <p>{links}</p>{_erro(erro)}{corpo or "<p class='aviso'>Sem horários livres nos próximos 14 dias para essa escolha. Tente outro profissional ou fale com a clínica.</p>"}""",
-                  indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav)
+                  indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug), modo="vidro")
 
 
 def agendado(info: dict, ag: dict, base: str) -> str:
@@ -189,7 +239,7 @@ def agendado(info: dict, ag: dict, base: str) -> str:
 <div class="cartao"><b>{e(ag['servico'])}</b> com <b>{e(ag['profissional'])}</b><br>{e(data_br(ag['data']))} às {e(ag['hora'])}<br>{e(ag['local'])} · {e(ag['endereco'])}</div>
 <div class="aviso"><b>Guarde este link</b> para consultar, cancelar ou remarcar:<br><a href="/m/{e(ag['codigo'])}">{e(base)}/m/{e(ag['codigo'])}</a><br>
 <span class="mudo">Código: <code>{e(ag['codigo'])}</code>. A clínica não envia mensagem automática: guarde o código.</span></div>{wa}""",
-                  indexar=False, marca=c["nome"], home=f"/c/{c['slug']}")
+                  indexar=False, marca=c["nome"], home=f"/c/{c['slug']}", fundo=fundo_de(c["slug"]), modo="vidro")
 
 
 def consulta(ag: dict, clinica: dict, erro: str = "") -> str:
@@ -199,7 +249,7 @@ def consulta(ag: dict, clinica: dict, erro: str = "") -> str:
 <span class="pill">{'confirmada' if ativo else 'cancelada'}</span></div>
 {f'''<div class="linha"><a class="btn sec fixo" href="/m/{e(ag['codigo'])}/remarcar">Remarcar</a>
 <form method="post" action="/m/{e(ag['codigo'])}/cancelar" class="in"><button class="perigo">Cancelar consulta</button></form></div>''' if ativo else ''}""",
-                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}")
+                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", fundo=fundo_de(clinica["slug"]), modo="vidro")
 
 
 def remarcar_paciente(ag: dict, clinica: dict, horarios: list[dict], profs: dict, erro: str = "") -> str:
@@ -209,7 +259,7 @@ def remarcar_paciente(ag: dict, clinica: dict, horarios: list[dict], profs: dict
                   f"<input type='hidden' name='hora' value='{e(h['hora'])}'><input type='hidden' name='profissional' value='{h['profissional_id']}'>"
                   f"<button class='sec' style='margin:3px'>{e(data_br(h['data']))} {e(h['hora'])} · {e(profs.get(h['profissional_id'], ''))}</button></form>")
     return pagina(f"Remarcar — {clinica['nome']}", f"<h1>Remarcar</h1>{_erro(erro)}<p class='mudo'>Escolha o novo horário:</p>{corpo or '<p class=aviso>Sem horários livres nos próximos 14 dias.</p>'}",
-                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}")
+                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", fundo=fundo_de(clinica["slug"]), modo="vidro")
 
 
 # ------------------------------------------------------------------ painel
@@ -222,7 +272,7 @@ def entrar(erro: str = "") -> str:
     return pagina("Entrar — agenda-clinica", f"""<h1>Entrar</h1>{_erro(erro)}<form method="post" action="/entrar" class="cartao">
 <label>E-mail<input name="email" type="email" required autocomplete="username"></label>
 <label>Senha<input name="senha" type="password" required autocomplete="current-password"></label><button>Entrar</button></form>
-<p class="mudo">Ainda não tem clínica? <a href="/#criar">Crie grátis</a>.</p>""", indexar=False)
+<p class="mudo">Ainda não tem clínica? <a href="/#criar">Crie grátis</a>.</p>""", indexar=False, fundo="minimalista", modo="vidro")
 
 
 def _nav_painel(c) -> str:
@@ -328,4 +378,13 @@ curl -X POST {e(base)}/api/v1/clinicas/demo/agendamentos -H 'content-type: appli
 <h2>Regras para o agente</h2><ul><li>Só agende um horário que <code>horarios_livres</code> devolveu.</li><li>Só envie <code>consentimento: true</code> se o paciente concordou.</li>
 <li>O sistema não envia mensagens: ao cancelar ou remarcar, avise o paciente por outro canal.</li><li>Não grave dado clínico nos campos.</li></ul>
 <h2>Operações</h2><div class="cartao" style="overflow:auto"><table><tr><th>Ferramenta</th><th>REST</th><th>Acesso</th><th>O que faz</th></tr>{linhas}</table></div>
-<p><a href="/openapi.json">openapi.json</a> · <a href="/llms.txt">llms.txt</a></p>""", desc="API REST e servidor MCP do agenda-clinica para agentes de IA.", canonical=f"{base}/docs", nav='<a href="/">Início</a>')
+<p><a href="/openapi.json">openapi.json</a> · <a href="/llms.txt">llms.txt</a></p>""", desc="API REST e servidor MCP do agenda-clinica para agentes de IA.", canonical=f"{base}/docs", nav='<a href="/">Início</a>', fundo="clinica-clara", modo="vidro")
+
+
+def creditos() -> str:
+    itens = "".join(
+        f"<div class='cartao'><b>{e(c['alt'])}</b><div class='mudo'>Foto de <a href='{e(c['pagina'])}' rel='noopener'>{e(c['fotografo'])}</a> · {e(c['fonte'])} · {e(c['licenca'])}</div></div>"
+        for k, c in sorted(CREDITOS.items()))
+    return pagina("Créditos das fotos — agenda-clinica", f"""<h1>Créditos das fotos</h1>
+<p>As fotos de fundo vêm do <b>Unsplash</b> e do <b>Pexels</b>, ambos de uso livre, e são servidas deste domínio (nenhum terceiro vê o seu acesso). Obrigado aos fotógrafos.</p>
+<div class="grade">{itens}</div>""", desc="Créditos das fotos de fundo do agenda-clinica.", nav='<a href="/">Início</a>', fundo="spa", modo="vidro")

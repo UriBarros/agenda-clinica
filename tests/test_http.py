@@ -260,3 +260,61 @@ def test_agendar_base_e_indexavel_mas_variante_com_parametro_e_pagina_do_pacient
     assert 'content="noindex"' in req(porta, "GET", f"/c/demo/agendar?servico={serv}")[1]
     ag = n.agendar(a.bd, c, serv, prof, proxima(1, 3), "08:00", "Maria", "48999990000", consentimento=True)
     assert 'content="noindex"' in req(porta, "GET", f"/m/{ag['codigo']}")[1]
+
+
+# ---------------------------------------------------------------- fotos de fundo (Unsplash/Pexels servidas do nosso domínio)
+
+def test_foto_de_fundo_sai_do_nosso_dominio_como_jpeg_com_cache(srv):
+    porta, _ = srv
+    c = http.client.HTTPConnection("127.0.0.1", porta, timeout=10)
+    c.request("GET", "/static/fundos/psicologia.jpg")
+    r = c.getresponse()
+    corpo = r.read()
+    c.close()
+    assert r.status == 200 and r.getheader("Content-Type") == "image/jpeg" and "max-age" in r.getheader("Cache-Control")
+    assert corpo[:3] == b"\xff\xd8\xff" and len(corpo) > 20_000  # é JPEG de verdade, não página de erro
+
+
+@pytest.mark.parametrize("caminho", ["/static/fundos/../app.py", "/static/fundos/..%2fapp.py", "/static/fundos/inexistente.jpg",
+                                     "/static/fundos/psicologia.png", "/static/fundos/creditos.json", "/static/fundos/"])
+def test_rota_de_foto_so_serve_o_pool_e_nunca_arquivo_pelo_caminho_da_url(srv, caminho):
+    porta, _ = srv
+    st, corpo, _ = req(porta, "GET", caminho)
+    assert st == 404 and "import " not in str(corpo)
+
+
+def test_todo_arquivo_do_pool_existe_e_tem_credito_e_todo_credito_tem_arquivo():
+    import paginas as pg
+    arquivos = {p.stem for p in pg.FUNDOS_DIR.glob("*.jpg")}
+    assert arquivos == set(pg.POOL) == set(pg.CREDITOS), "foto sem crédito (ou crédito sem foto) vira foto sem autoria na página"
+    for c in pg.CREDITOS.values():
+        assert c["fonte"] in ("Unsplash", "Pexels") and c["fotografo"] and c["pagina"].startswith("https://") and c["alt"]
+
+
+def test_cada_clinica_ganha_a_mesma_foto_sempre_e_a_pagina_mostra_o_credito(srv):
+    import paginas as pg
+    porta, _ = srv
+    assert pg.fundo_de("demo") == pg.fundo_de("demo") and pg.fundo_de("demo") in pg.POOL
+    for caminho in ("/", "/c/demo", "/c/demo/agendar", "/entrar", "/docs", "/privacidade", "/creditos"):
+        st, html, _ = req(porta, "GET", caminho)
+        assert st == 200 and "/static/fundos/" in html and 'href="/creditos"' in html, caminho
+    _, h1, _ = req(porta, "GET", "/c/demo")
+    _, h2, _ = req(porta, "GET", "/c/demo")
+    assert re.search(r"/static/fundos/([a-z-]+)\.jpg", h1).group(1) == re.search(r"/static/fundos/([a-z-]+)\.jpg", h2).group(1) == pg.fundo_de("demo")
+
+
+def test_pagina_de_creditos_lista_todas_as_fotos_com_link_do_autor(srv):
+    import paginas as pg
+    porta, _ = srv
+    _, html, _ = req(porta, "GET", "/creditos")
+    for c in pg.CREDITOS.values():
+        assert c["fotografo"] in html and c["pagina"] in html
+
+
+def test_painel_continua_limpo_sem_foto_e_a_csp_continua_sem_script(srv):
+    porta, a = srv
+    _, html, r = req(porta, "GET", "/entrar")
+    assert "script-src 'none'" in r.getheader("Content-Security-Policy") and "<script" not in html.replace('type="application/ld+json"', "")
+    c = n.clinica_por_slug(a.bd, "demo")
+    import paginas as pg
+    assert "/static/fundos/" not in pg.painel(c, "tok", __import__("datetime").date.today(), [], [], [])  # tela de trabalho: sem foto

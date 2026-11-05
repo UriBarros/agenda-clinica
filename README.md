@@ -40,6 +40,7 @@ Backup: `python3 app.py backup <arquivo>`. Tirar uma página do índice de busca
 - **Painel** em `/painel` (login por e-mail e senha, scrypt): agenda do dia, cancelar, remarcar, **bloquear agenda** (de um profissional ou da clínica toda, com opção de cancelar
   as consultas atingidas), locais, equipe, serviços, horário semanal por local (duas faixas por dia) e chaves de API.
 - **Sem choque de horário**: a checagem e a gravação acontecem na mesma transação (`BEGIN IMMEDIATE`); há teste com 8 pedidos simultâneos para o mesmo horário.
+- **Visual imersivo**: fotos de fundo do **Unsplash** e do **Pexels** (uso livre), **servidas do nosso domínio** (`/static/fundos/`, sem hotlink: nenhum terceiro vê o acesso do paciente), com crédito em cada página e em `/creditos`. Cada clínica ganha uma foto estável pelo endereço dela. O painel fica limpo, sem foto. Trocar ou somar foto = um `.jpg` em `static/fundos/`, a entrada em `static/creditos.json` e o nome em `POOL` (`paginas.py`); um teste falha se faltar o arquivo ou o crédito.
 - **LGPD**: guarda só nome, telefone e e-mail opcional; consentimento explícito; nenhum dado clínico; sem rastreadores.
 
 ## Para agentes (API e MCP)
