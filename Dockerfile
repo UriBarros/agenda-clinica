@@ -5,7 +5,7 @@ FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080 DATA_DIR=/data
 WORKDIR /app
-COPY *.py ./
+COPY *.py nichos.json ./
 COPY static ./static
 RUN mkdir /data && chown 10001 /data
 USER 10001

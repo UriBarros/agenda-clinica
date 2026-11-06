@@ -1,0 +1,88 @@
+{
+ "clinica": {
+  "nome": "clínica",
+  "pool": ["acolhimento", "clinica-clara", "consulta", "conversa", "minimalista", "moderna", "nutricao", "psicologia", "recepcao", "spa"],
+  "ld": "MedicalClinic",
+  "agendar": "Agendar consulta",
+  "profs": "Profissionais",
+  "qualquer": "Qualquer profissional",
+  "outro": "outro profissional",
+  "sem_servicos": "Esta clínica ainda não cadastrou serviços.",
+  "falar": "Falar com a clínica",
+  "sem_msg": "A clínica não envia mensagem automática: guarde o código.",
+  "autorizo": "Autorizo a clínica a usar meu nome e telefone para este agendamento",
+  "saude": " Não escreva informações de saúde aqui.",
+  "sua": "Sua consulta",
+  "a_consulta": "a consulta",
+  "cancelar": "Cancelar consulta",
+  "home": {
+   "fundo": "psicologia",
+   "titulo": "agenda-clinica — site de clínica com agendamento online, grátis e aberto",
+   "desc": "Site de clínica com agendamento online grátis e de código aberto: profissionais, locais, painel com login, API REST e MCP para agentes.",
+   "h1": "Site de clínica com agendamento online.",
+   "p": "Páginas para a clínica e cada profissional, vários locais, agenda por horário livre e painel com login para bloquear, cancelar e remarcar. Sem mensalidade, sem anúncio. E <b>API e MCP</b> para agentes de IA agendarem.",
+   "cliente": ["Para o paciente", "Escolhe serviço, profissional e horário livre no celular, sem criar conta. Recebe um código para consultar, cancelar ou remarcar."],
+   "dono": ["Para a clínica", "Painel com login: agenda do dia, bloqueio de férias e folgas, cancelar e remarcar, equipe, locais e horários semanais."],
+   "criar": "Criar minha clínica",
+   "nome_label": "Nome da clínica",
+   "privacidade": "Ao criar, você aceita a <a href=\"/privacidade\">política de privacidade</a>. Não guardamos dado clínico: só nome, telefone e e-mail de quem agenda.",
+   "demo": "Ver uma clínica de demonstração",
+   "demo_slug": "demo"
+  },
+  "demo": {
+   "nome": "Clínica Demonstração",
+   "descricao": "Clínica fictícia para testar o agendamento e a API. Os dados daqui são de teste e podem ser apagados.",
+   "locais": [["Unidade Centro", "Rua Exemplo, 100"], ["Unidade Praia", "Av. da Praia, 200"]],
+   "profissionais": [
+    {"nome": "Dra. Ana Lima", "especialidade": "Psicologia", "registro": "CRP 00/00000", "bio": "Atendimento adulto e de casal.",
+     "janelas": [[[1, 3], "09:00", "12:00", 0], [[2, 4], "14:00", "18:00", 1]]},
+    {"nome": "Dra. Bia Souza", "especialidade": "Nutrição", "registro": "CRN 0/00000", "bio": "Reeducação alimentar e esportiva.",
+     "janelas": [[[1, 2, 3, 4, 5], "08:00", "12:00", 0]]}
+   ],
+   "servicos": [["Consulta", 50, 20000], ["Retorno", 30, 12000]]
+  }
+ },
+ "barbearia": {
+  "nome": "barbearia",
+  "pool": ["barbearia-tijolo", "barbearia-espelho", "barbearia-salao"],
+  "ld": "BarberShop",
+  "agendar": "Agendar horário",
+  "profs": "Barbeiros",
+  "qualquer": "Qualquer barbeiro",
+  "outro": "outro barbeiro",
+  "sem_servicos": "Esta barbearia ainda não cadastrou serviços.",
+  "falar": "Falar com a barbearia",
+  "sem_msg": "A barbearia não envia mensagem automática: guarde o código.",
+  "autorizo": "Autorizo a barbearia a usar meu nome e telefone para este agendamento",
+  "saude": "",
+  "sua": "Seu horário",
+  "a_consulta": "o horário",
+  "cancelar": "Cancelar horário",
+  "home": {
+   "fundo": "barbearia-tijolo",
+   "titulo": "Agendamento online grátis para barbearia — código aberto",
+   "desc": "Site de barbearia com agendamento online grátis e de código aberto: barbeiros, unidades, painel com login, lembrete opcional por WhatsApp, API REST e MCP para agentes.",
+   "h1": "Agenda online para barbearia. Grátis.",
+   "p": "Página da barbearia e de cada barbeiro, mais de uma unidade, horário livre escolhido no celular e painel com login para bloquear, cancelar e remarcar. Sem mensalidade, sem anúncio. E <b>API e MCP</b> para agentes de IA agendarem.",
+   "cliente": ["Para o cliente", "Escolhe o corte, o barbeiro e o horário livre no celular, sem criar conta. Recebe um código para consultar, cancelar ou remarcar."],
+   "dono": ["Para a barbearia", "Painel com login: agenda do dia, folgas e férias, cancelar e remarcar, barbeiros, unidades e horários semanais."],
+   "criar": "Criar minha barbearia",
+   "nome_label": "Nome da barbearia",
+   "privacidade": "Ao criar, você aceita a <a href=\"/privacidade\">política de privacidade</a>. Guardamos só nome, telefone e e-mail de quem agenda.",
+   "demo": "Ver uma barbearia de demonstração",
+   "demo_slug": "demo-barbearia"
+  },
+  "demo": {
+   "nome": "Barbearia Demonstração",
+   "descricao": "Barbearia fictícia para testar o agendamento e a API. Os dados daqui são de teste e podem ser apagados.",
+   "locais": [["Unidade Centro", "Rua Exemplo, 100"], ["Unidade Praia", "Av. da Praia, 200"]],
+   "profissionais": [
+    {"nome": "Rafa Barbeiro", "especialidade": "Corte e degradê", "registro": "", "bio": "Degradê, tesoura e acabamento na navalha.",
+     "janelas": [[[2, 3, 4, 5, 6], "09:00", "19:00", 0]]},
+    {"nome": "Leo Navalha", "especialidade": "Barba", "registro": "", "bio": "Barba na toalha quente e desenho de contorno.",
+     "janelas": [[[3, 4, 5, 6], "10:00", "20:00", 1]]}
+   ],
+   "servicos": [["Corte", 40, 5000], ["Barba", 30, 4000], ["Corte + barba", 60, 8000]]
+  }
+ }
+}

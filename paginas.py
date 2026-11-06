@@ -12,6 +12,7 @@ import json
 import urllib.parse
 from pathlib import Path
 
+import nichos as nx
 import nucleo as n
 import ops
 
@@ -20,7 +21,7 @@ e = html.escape
 # Fotos de fundo (Unsplash e Pexels, licenças de uso livre), servidas do NOSSO domínio com crédito (ADR-001): nada de hotlink,
 # nada de terceiro vendo o IP do paciente. Cada clínica ganha uma foto estável pelo endereço dela (mesma entrada, mesma foto).
 FUNDOS_DIR = Path(__file__).resolve().parent / "static" / "fundos"
-POOL = ["acolhimento", "clinica-clara", "consulta", "conversa", "minimalista", "moderna", "nutricao", "psicologia", "recepcao", "spa"]
+POOL = nx.POOL_TODOS  # o pool de CADA nicho mora em nichos.json
 try:
     CREDITOS = json.loads((FUNDOS_DIR.parent / "creditos.json").read_text(encoding="utf-8"))
 except (OSError, ValueError):
@@ -32,8 +33,9 @@ except (OSError, ValueError):
 FOTOS_VALIDAS = {f"{p}{suf}" for p in POOL for suf in ("", "-m", "-b")}
 
 
-def fundo_de(chave: str) -> str:
-    return POOL[int(hashlib.sha256(str(chave).encode()).hexdigest(), 16) % len(POOL)]
+def fundo_de(chave: str, c=None) -> str:
+    pool = nx.vocab(c)["pool"]
+    return pool[int(hashlib.sha256(str(chave).encode()).hexdigest(), 16) % len(pool)]
 DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]
 CSS = """
 :root{--bg:#f1f6f5;--cartao:#fff;--tinta:#10292a;--mudo:#587170;--linha:#d6e3e1;--c:#0f766e;--c2:#0b5a54;--aviso:#fff4d6;--erro:#b42318;--ok:#067647;
@@ -123,27 +125,26 @@ def _erro(msg: str) -> str:
 
 # ------------------------------------------------------------------ raiz
 
-def home(repo_url: str, demo: bool, erro: str = "") -> str:
-    return pagina("agenda-clinica — site de clínica com agendamento online, grátis e aberto", f"""
+def home(repo_url: str, demo: bool, erro: str = "", nicho: str = nx.PADRAO) -> str:
+    """Página de entrada de um nicho (`/` = clínica, `/<nicho>` os outros): todo o texto vem de nichos.json."""
+    H = nx.NICHOS[nicho]["home"]
+    return pagina(H["titulo"], f"""
 <div class="grade">
-<div class="cartao"><b>Para o paciente</b><p class="mudo">Escolhe serviço, profissional e horário livre no celular, sem criar conta. Recebe um código para consultar, cancelar ou remarcar.</p></div>
-<div class="cartao"><b>Para a clínica</b><p class="mudo">Painel com login: agenda do dia, bloqueio de férias e folgas, cancelar e remarcar, equipe, locais e horários semanais.</p></div>
+<div class="cartao"><b>{H["cliente"][0]}</b><p class="mudo">{H["cliente"][1]}</p></div>
+<div class="cartao"><b>{H["dono"][0]}</b><p class="mudo">{H["dono"][1]}</p></div>
 <div class="cartao"><b>Para agentes</b><p class="mudo">API REST (<a href="/openapi.json">OpenAPI</a>) e MCP em <code>/mcp</code>. Veja o <a href="/docs">guia</a> e o <a href="/llms.txt">llms.txt</a>.</p></div></div>
-<h2 id="criar">Criar minha clínica</h2>{_erro(erro)}
-<form method="post" action="/criar" class="cartao"><label>Nome da clínica<input name="nome" required maxlength="100"></label>
+<h2 id="criar">{H["criar"]}</h2>{_erro(erro)}
+<form method="post" action="/criar" class="cartao"><input type="hidden" name="nicho" value="{e(nicho)}"><label>{H["nome_label"]}<input name="nome" required maxlength="100"></label>
 <label>E-mail (será o login)<input name="email" type="email" required></label>
 <label>Senha (mínimo 10 caracteres)<input name="senha" type="password" minlength="10" required autocomplete="new-password"></label>
-<p class="mudo">Ao criar, você aceita a <a href="/privacidade">política de privacidade</a>. Não guardamos dado clínico: só nome, telefone e e-mail de quem agenda.</p>
+<p class="mudo">{H["privacidade"]}</p>
 <button>Criar grátis</button></form>
-{'<p><a href="/c/demo">Ver uma clínica de demonstração</a> (dados fictícios; agentes podem testar a API nela).</p>' if demo else ''}
+{f'<p><a href="/c/{H["demo_slug"]}">{H["demo"]}</a> (dados fictícios; agentes podem testar a API nela).</p>' if demo else ''}
 <footer>Código-fonte: <a href="{e(repo_url)}">{e(repo_url)}</a> · <a href="/privacidade">Privacidade</a></footer>""",
-        desc="Site de clínica com agendamento online grátis e de código aberto: profissionais, locais, painel com login, API REST e MCP para agentes.",
-        nav='<a href="/docs">Para agentes</a><a href="/entrar">Entrar</a>', fundo="psicologia", modo="heroi",
-        heroi=('<span class="kicker">Grátis · código aberto (MIT)</span><h1>Site de clínica com agendamento online.</h1>'
-               '<p>Páginas para a clínica e cada profissional, vários locais, agenda por horário livre e painel com login para bloquear, cancelar e remarcar. '
-               'Sem mensalidade, sem anúncio. E <b>API e MCP</b> para agentes de IA agendarem.</p>'
-               '<div class="acoes"><a class="btn grande" href="#criar">Criar minha clínica</a>'
-               + ('<a class="btn grande sec" href="/c/demo">Ver a demonstração</a>' if demo else "") + '</div>'))
+        desc=H["desc"], nav='<a href="/docs">Para agentes</a><a href="/entrar">Entrar</a>', fundo=H["fundo"], modo="heroi",
+        heroi=(f'<span class="kicker">Grátis · código aberto (MIT)</span><h1>{H["h1"]}</h1><p>{H["p"]}</p>'
+               f'<div class="acoes"><a class="btn grande" href="#criar">{H["criar"]}</a>'
+               + (f'<a class="btn grande sec" href="/c/{H["demo_slug"]}">Ver a demonstração</a>' if demo else "") + '</div>'))
 
 
 def privacidade() -> str:
@@ -153,14 +154,14 @@ junto da data, do horário, do serviço e do profissional. <b>Não guardamos dad
 <p>Esses dados são visíveis para a clínica em que você agendou e para quem tiver o código da sua consulta. Não são vendidos nem usados para
 publicidade. Para corrigir ou apagar seus dados, peça à clínica; quem opera o serviço atende a clínica pelo e-mail dela.</p>
 <p>A clínica é a controladora dos dados dos próprios pacientes (LGPD, art. 5º, VI); este software é a ferramenta. O código é aberto e pode ser auditado.</p>
-<p>Este sistema <b>não envia mensagens</b> (e-mail ou WhatsApp): quem avisa o paciente de cancelamentos e remarcações é a clínica.</p>""", nav='<a href="/">Início</a>', fundo="clinica-clara", modo="vidro")
+<p>Por padrão este sistema <b>não envia mensagens</b>. Se a clínica ligar o lembrete por WhatsApp, você recebe no máximo <b>uma confirmação e um lembrete</b> da sua consulta, no número que informou, com um link para não receber mais. Cancelamentos e remarcações feitos pela clínica continuam sendo avisados por ela.</p>""", nav='<a href="/">Início</a>', fundo="clinica-clara", modo="vidro")
 
 
 # ------------------------------------------------------------------ site da clínica
 
 def site_clinica(info: dict, base: str) -> str:
     c = info["clinica"]
-    ld = {"@context": "https://schema.org", "@type": "MedicalClinic", "name": c["nome"], "url": f"{base}/c/{c['slug']}",
+    ld = {"@context": "https://schema.org", "@type": nx.vocab(c)["ld"], "name": c["nome"], "url": f"{base}/c/{c['slug']}",
           "description": c["descricao"] or None, "telephone": c["telefone"] or None, "email": c["email"] or None,
           "location": [{"@type": "Place", "name": l["nome"], "address": ", ".join(x for x in (l["endereco"], l["cidade"]) if x)} for l in info["locais"]],
           "employee": [{"@type": "Person", "name": p["nome"], "jobTitle": p["especialidade"] or None} for p in info["profissionais"]]}
@@ -178,17 +179,18 @@ def site_clinica(info: dict, base: str) -> str:
     servs = "".join(f"<tr><td>{e(s['nome'])}</td><td>{s['duracao_min']} min</td><td>{e(brl(s['preco_centavos']))}</td>"
                     f"<td><a href='/c/{e(c['slug'])}/agendar?servico={s['id']}'>Agendar</a></td></tr>" for s in info["servicos"])
     locs = "".join(f"<div class='cartao'><b>{e(l['nome'])}</b><div class='mudo'>{e(l['endereco'])} {e(l['cidade'])}</div></div>" for l in info["locais"])
-    return pagina(f"{c['nome']} — agende online", f"""<h2 style="margin-top:.2em">Profissionais</h2><div class="grade">{profs or "<p class='mudo'>Em breve.</p>"}</div>
+    V = nx.vocab(c)
+    return pagina(f"{c['nome']} — agende online", f"""<h2 style="margin-top:.2em">{V["profs"]}</h2><div class="grade">{profs or "<p class='mudo'>Em breve.</p>"}</div>
 <h2>Serviços</h2><div class="cartao"><table><tr><th>Serviço</th><th>Duração</th><th>Valor</th><th></th></tr>{servs}</table></div>
 <h2>Onde atendemos</h2><div class="grade">{locs}</div>
 <footer>Agendamento por <a href="/">agenda-clinica</a>, software livre.</footer>""",
-        desc=f"{c['nome']}{' em ' + c['cidade'] if c['cidade'] else ''}: conheça os profissionais e agende online.",
+        desc=f"{c['nome']}{' em ' + c['cidade'] if c['cidade'] else ''}: conheça a equipe e agende online.",
         canonical=f"{base}/c/{c['slug']}" if c.get("indexavel") else "", indexar=bool(c.get("indexavel")),
         marca=c["nome"], home=f"/c/{c['slug']}",
         extra_head=f'<script type="application/ld+json">{ld}</script>',
-        nav=f'<a href="/c/{e(c["slug"])}/agendar">Agendar</a>', fundo=fundo_de(c["slug"]), modo="heroi",
+        nav=f'<a href="/c/{e(c["slug"])}/agendar">Agendar</a>', fundo=fundo_de(c["slug"], c), modo="heroi",
         heroi=(f'<span class="kicker">{e(c["cidade"]) if c["cidade"] else "Agende online"}</span><h1>{e(c["nome"])}</h1><p>{e(c["descricao"])}</p>'
-               f'<div class="acoes"><a class="btn grande" href="/c/{e(c["slug"])}/agendar">Agendar consulta</a>' + (f'<a class="btn grande sec" href="https://wa.me/{e(_so_digitos(c["telefone"]))}">WhatsApp</a>' if _so_digitos(c["telefone"]) else "") + '</div>'))
+               f'<div class="acoes"><a class="btn grande" href="/c/{e(c["slug"])}/agendar">{e(nx.vocab(c)["agendar"])}</a>' + (f'<a class="btn grande sec" href="https://wa.me/{e(_so_digitos(c["telefone"]))}">WhatsApp</a>' if _so_digitos(c["telefone"]) else "") + '</div>'))
 
 
 def _so_digitos(t: str) -> str:
@@ -203,13 +205,14 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
     serv = next((s for s in info["servicos"] if str(s["id"]) == q.get("servico")), None)
     base = f"/c/{e(slug)}/agendar"
     nav = f'<a href="/c/{e(slug)}">Voltar ao site</a>'
+    V = nx.vocab(c)
     if not serv:
         itens = "".join(f"<a class='cartao' style='display:block;text-decoration:none' href='{base}?servico={s['id']}'><b>{e(s['nome'])}</b>"
                         f"<div class='mudo'>{s['duracao_min']} min {e(brl(s['preco_centavos']))}</div></a>" for s in info["servicos"])
-        return pagina(f"Agendar — {c['nome']}", f"<h1>Qual serviço?</h1>{_erro(erro)}<div class='grade'>{itens or '<p>Esta clínica ainda não cadastrou serviços.</p>'}</div>",
+        return pagina(f"Agendar — {c['nome']}", f"<h1>Qual serviço?</h1>{_erro(erro)}<div class='grade'>{itens or '<p>' + e(V['sem_servicos']) + '</p>'}</div>",
                       # A /agendar BASE é indexável (decisão do dono: "indexa tudo"); com parâmetro (serviço, horário) ou erro
                       # é combinação infinita de URLs sem conteúdo próprio, e a página do paciente (/m/) é dado pessoal: noindex.
-                      indexar=not q and not erro, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug), modo="vidro")
+                      indexar=not q and not erro, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug, c), modo="vidro")
     if q.get("hora") and q.get("data") and q.get("profissional"):
         p = profs.get(int(q["profissional"])) if q["profissional"].isascii() and q["profissional"].isdigit() else None
         loc = next((h for h in horarios if h["data"] == q["data"] and h["hora"] == q["hora"] and str(h["profissional_id"]) == q["profissional"]), None)
@@ -223,11 +226,11 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
 <label>Seu nome<input name="nome" required maxlength="100" autocomplete="name"></label>
 <label>Telefone com DDD<input name="telefone" required inputmode="tel" autocomplete="tel" placeholder="(48) 99999-0000"></label>
 <label>E-mail (opcional)<input name="email" type="email" autocomplete="email"></label>
-<p><label style="font-weight:400"><input type="checkbox" name="consentimento" value="1" required> Autorizo a clínica a usar meu nome e telefone para este agendamento
-(<a href="/privacidade">privacidade</a>). Não escreva informações de saúde aqui.</label></p>
-<button>Confirmar</button></form>""", indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug), modo="vidro")
+<p><label style="font-weight:400"><input type="checkbox" name="consentimento" value="1" required> {e(V["autorizo"])}
+(<a href="/privacidade">privacidade</a>).{e(V["saude"])}</label></p>
+<button>Confirmar</button></form>""", indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug, c), modo="vidro")
     filtro = q.get("profissional", "")
-    links = f"<a class='pill' href='{base}?servico={serv['id']}'>Qualquer profissional</a> " + " ".join(
+    links = f"<a class='pill' href='{base}?servico={serv['id']}'>{e(V['qualquer'])}</a> " + " ".join(
         f"<a class='pill' href='{base}?servico={serv['id']}&amp;profissional={p['id']}'>{e(p['nome'])}</a>" for p in info["profissionais"])
     dias: dict = {}
     for h in horarios:
@@ -239,28 +242,28 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
         corpo += (f"<div><b>{e(data_br(d))}</b> · {e(profs[pid]['nome'])} · <span class='mudo'>{e(locais[lid]['nome'])}</span><div class='horas'>"
                   + "".join(f"<a href='{base}?{e(qs(hr))}'>{e(hr)}</a>" for hr in horas) + "</div></div>")
     return pagina(f"Horários — {c['nome']}", f"""<h1>{e(serv['nome'])}</h1><p class="mudo">Próximos 14 dias · {serv['duracao_min']} min</p>
-<p>{links}</p>{_erro(erro)}{corpo or "<p class='aviso'>Sem horários livres nos próximos 14 dias para essa escolha. Tente outro profissional ou fale com a clínica.</p>"}""",
-                  indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug), modo="vidro")
+<p>{links}</p>{_erro(erro)}{corpo or "<p class='aviso'>Sem horários livres nos próximos 14 dias para essa escolha. Tente {e(V['outro'])} ou fale com {e(c['nome'])}.</p>"}""",
+                  indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug, c), modo="vidro")
 
 
 def agendado(info: dict, ag: dict, base: str) -> str:
     c = info["clinica"]
-    wa = (f"<p><a class='btn sec' href='https://wa.me/{e(_so_digitos(c['telefone']))}'>Falar com a clínica</a></p>" if _so_digitos(c["telefone"]) else "")
+    wa = (f"<p><a class='btn sec' href='https://wa.me/{e(_so_digitos(c['telefone']))}'>{e(nx.vocab(c)['falar'])}</a></p>" if _so_digitos(c["telefone"]) else "")
     return pagina(f"Agendado — {c['nome']}", f"""<h1 class="ok">Agendado!</h1>
 <div class="cartao"><b>{e(ag['servico'])}</b> com <b>{e(ag['profissional'])}</b><br>{e(data_br(ag['data']))} às {e(ag['hora'])}<br>{e(ag['local'])} · {e(ag['endereco'])}</div>
 <div class="aviso"><b>Guarde este link</b> para consultar, cancelar ou remarcar:<br><a href="/m/{e(ag['codigo'])}">{e(base)}/m/{e(ag['codigo'])}</a><br>
-<span class="mudo">Código: <code>{e(ag['codigo'])}</code>. A clínica não envia mensagem automática: guarde o código.</span></div>{wa}""",
-                  indexar=False, marca=c["nome"], home=f"/c/{c['slug']}", fundo=fundo_de(c["slug"]), modo="vidro")
+<span class="mudo">Código: <code>{e(ag['codigo'])}</code>. {"Você receberá um lembrete por WhatsApp; guarde o código também." if c.get("lembrete_whatsapp") else nx.vocab(c)["sem_msg"]}</span></div>{wa}""",
+                  indexar=False, marca=c["nome"], home=f"/c/{c['slug']}", fundo=fundo_de(c["slug"], c), modo="vidro")
 
 
 def consulta(ag: dict, clinica: dict, erro: str = "") -> str:
     ativo = ag["status"] == "confirmado"
-    return pagina(f"Sua consulta — {clinica['nome']}", f"""<h1>Sua consulta</h1>{_erro(erro)}
+    return pagina(f"{nx.vocab(clinica)['sua']} — {clinica['nome']}", f"""<h1>{nx.vocab(clinica)['sua']}</h1>{_erro(erro)}
 <div class="cartao"><b>{e(ag['servico'])}</b> com <b>{e(ag['profissional'])}</b><br>{e(data_br(ag['data']))} às {e(ag['hora'])}<br>{e(ag['local'])} · {e(ag['endereco'])}<br>
 <span class="pill">{'confirmada' if ativo else 'cancelada'}</span></div>
 {f'''<div class="linha"><a class="btn sec fixo" href="/m/{e(ag['codigo'])}/remarcar">Remarcar</a>
-<form method="post" action="/m/{e(ag['codigo'])}/cancelar" class="in"><button class="perigo">Cancelar consulta</button></form></div>''' if ativo else ''}""",
-                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", fundo=fundo_de(clinica["slug"]), modo="vidro")
+<form method="post" action="/m/{e(ag['codigo'])}/cancelar" class="in"><button class="perigo">{nx.vocab(clinica)["cancelar"]}</button></form></div>''' if ativo else ''}""",
+                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
 
 
 def remarcar_paciente(ag: dict, clinica: dict, horarios: list[dict], profs: dict, erro: str = "") -> str:
@@ -270,7 +273,7 @@ def remarcar_paciente(ag: dict, clinica: dict, horarios: list[dict], profs: dict
                   f"<input type='hidden' name='hora' value='{e(h['hora'])}'><input type='hidden' name='profissional' value='{h['profissional_id']}'>"
                   f"<button class='sec' style='margin:3px'>{e(data_br(h['data']))} {e(h['hora'])} · {e(profs.get(h['profissional_id'], ''))}</button></form>")
     return pagina(f"Remarcar — {clinica['nome']}", f"<h1>Remarcar</h1>{_erro(erro)}<p class='mudo'>Escolha o novo horário:</p>{corpo or '<p class=aviso>Sem horários livres nos próximos 14 dias.</p>'}",
-                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", fundo=fundo_de(clinica["slug"]), modo="vidro")
+                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
 
 
 # ------------------------------------------------------------------ painel
@@ -287,7 +290,7 @@ def entrar(erro: str = "") -> str:
 
 
 def _nav_painel(c) -> str:
-    return (f'<a href="/painel">Agenda</a><a href="/painel/equipe">Equipe e horários</a><a href="/painel/api">Agentes e API</a>'
+    return (f'<a href="/painel">Agenda</a><a href="/painel/equipe">Equipe e horários</a><a href="/painel/whatsapp">WhatsApp</a><a href="/painel/api">Agentes e API</a>'
             f'<a href="/c/{e(c["slug"])}">Ver site</a><a href="/sair">Sair</a>')
 
 
@@ -387,7 +390,7 @@ curl -X POST {e(base)}/api/v1/clinicas/demo/agendamentos -H 'content-type: appli
   -d '{{"servico_id":1,"profissional_id":1,"data":"2026-11-10","hora":"09:00","nome":"Maria","telefone":"48999990000","consentimento":true}}'</pre>
 <p>Erros: <code>{{"erro":{{"codigo":"horario_indisponivel","mensagem":"..."}}}}</code> com o status HTTP correspondente (409 = horário tomado, consulte de novo).</p>
 <h2>Regras para o agente</h2><ul><li>Só agende um horário que <code>horarios_livres</code> devolveu.</li><li>Só envie <code>consentimento: true</code> se o paciente concordou.</li>
-<li>O sistema não envia mensagens: ao cancelar ou remarcar, avise o paciente por outro canal.</li><li>Não grave dado clínico nos campos.</li></ul>
+<li>Só saem mensagens se a clínica ligou o WhatsApp (veja <code>whatsapp_status</code>), e só lembretes de consultas reais: não há operação para mandar texto a um número. Ao cancelar ou remarcar, avise o paciente por outro canal.</li><li>Não grave dado clínico nos campos.</li></ul>
 <h2>Operações</h2><div class="cartao" style="overflow:auto"><table><tr><th>Ferramenta</th><th>REST</th><th>Acesso</th><th>O que faz</th></tr>{linhas}</table></div>
 <p><a href="/openapi.json">openapi.json</a> · <a href="/llms.txt">llms.txt</a></p>""", desc="API REST e servidor MCP do agenda-clinica para agentes de IA.", canonical=f"{base}/docs", nav='<a href="/">Início</a>', fundo="clinica-clara", modo="vidro")
 
@@ -399,3 +402,33 @@ def creditos() -> str:
     return pagina("Créditos das fotos — agenda-clinica", f"""<h1>Créditos das fotos</h1>
 <p>As fotos de fundo vêm do <b>Unsplash</b> e do <b>Pexels</b>, ambos de uso livre, e são servidas deste domínio (nenhum terceiro vê o seu acesso). Obrigado aos fotógrafos.</p>
 <div class="grade">{itens}</div>""", desc="Créditos das fotos de fundo do agenda-clinica.", nav='<a href="/">Início</a>', fundo="spa", modo="vidro")
+
+
+# ------------------------------------------------------------------ WhatsApp (lembretes pelo Evolution)
+
+def painel_whatsapp(c, tok: str, est: dict, msg: str = "", erro: str = "") -> str:
+    cont = " · ".join(f"{k}: {v}" for k, v in sorted(est["lembretes"].items())) or "nenhum ainda"
+    sit = ("o servidor <b>não tem Evolution configurado</b> (EVOLUTION_URL e EVOLUTION_KEY): não dá para ligar aqui" if not est["servidor_com_evolution"]
+           else f"instância <code>{e(est['instancia'] or '—')}</code>: <b>{e(est['whatsapp'])}</b>")
+    return pagina(f"WhatsApp — {c['nome']}", f"""<h1>Lembrete por WhatsApp</h1>{f'<p class="ok">{e(msg)}</p>' if msg else ''}{_erro(erro)}
+<div class="aviso" role="alert"><b>Leia antes de ligar.</b> {e(est['aviso'])}</div>
+<p>Conecte o WhatsApp da clínica numa instância do <b>Evolution</b> (o QR é lido lá, não aqui) e informe o nome da instância. Depois de ligado, cada agendamento
+gera sozinho {'uma confirmação e ' if est['confirmacao'] else ''}um lembrete; <b>não há como mandar mensagem a um número ou texto livre</b>, nem por aqui nem pela API/MCP.</p>
+<p class="mudo">Situação: {sit}. Lembretes: {e(cont)}. Estão {'ligados' if est['ativo'] else 'desligados'}.</p>
+<form method="post" action="/painel/acao" class="cartao">{_csrf(tok)}<input type="hidden" name="acao" value="whatsapp"><input type="hidden" name="volta" value="/painel/whatsapp">
+<label>Nome da instância no Evolution<input name="instancia" value="{e(est['instancia'])}" maxlength="40" placeholder="minha-clinica"></label>
+<div class="linha"><label>Lembrar quantas horas antes<input name="lembrete_horas" type="number" min="1" max="72" value="{est['lembrete_horas']}"></label></div>
+<p><label style="font-weight:400"><input type="checkbox" name="confirmacao" value="1" {'checked' if est['confirmacao'] else ''}> Também mandar uma confirmação assim que o paciente agendar</label></p>
+<p><label style="font-weight:400"><input type="checkbox" name="ativo" value="1" {'checked' if est['ativo'] else ''}> Ligar os lembretes</label></p>
+<p><label style="font-weight:400"><input type="checkbox" name="aceito_risco" value="1"> Li o aviso: sei que o número pode ser banido pelo WhatsApp e que uso um número só da clínica, sem divulgação.</label></p>
+<button>Salvar</button></form>""", indexar=False, marca=c["nome"], home="/painel", nav=_nav_painel(c))
+
+
+def sem_lembrete(ag: dict, clinica: dict, feito: bool) -> str:
+    V = nx.vocab(clinica)
+    corpo = (f"<h1 class='ok'>Pronto</h1><p>Você não receberá mais lembretes de {e(clinica['nome'])} neste telefone. {V['sua']} continua marcada.</p>" if feito else
+             f"<h1>Não quer receber lembretes?</h1><p>Vale para este telefone em {e(clinica['nome'])}. {V['sua']} de {e(ag['servico'])}, {e(data_br(ag['data']))} às {e(ag['hora'])}, continua marcada.</p>"
+             f"<form method='post' action='/m/{e(ag['codigo'])}/sem-lembrete'><button>Parar de receber</button></form>"
+             f"<p class='mudo'>Não foi você que agendou? <a href='/m/{e(ag['codigo'])}'>Cancele {V['a_consulta']} aqui</a>.</p>")
+    return pagina(f"Lembretes — {clinica['nome']}", corpo, indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}",
+                  fundo=fundo_de(clinica["slug"], clinica), modo="vidro")

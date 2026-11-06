@@ -66,6 +66,30 @@ Cada operação é declarada **uma vez** em `ops.py`; REST, MCP, OpenAPI e `llms
 - **Cadastro aberto sem verificação de e-mail, e toda clínica nasce indexável** (decisão do dono: "indexa tudo"). O risco é alguém publicar página indexada com o nome de uma marca alheia ou spam sob o nosso domínio: o operador tira a página do índice com `python3 app.py delistar <endereço>` (e `listar` desfaz). Há teto de 100 clínicas novas por dia.
 - Tetos: 30 profissionais, 20 locais, 60 serviços, 10 chaves por clínica; consulta de horários até 14 dias e 300 linhas por resposta (`truncado: true` = refine); lote MCP até 10 itens; 100 clínicas novas por dia.
 
+## Nichos: uma engine, vários negócios (barbearia e o que vier)
+
+O mesmo motor atende outros tipos de negócio com hora marcada. O que muda por nicho é **dado**, em `nichos.json`: vocabulário (barbeiro em vez de profissional, horário em vez de consulta), as fotos de fundo, a página de entrada e a demonstração. **Não existe código por nicho**, e um teste (`tests/test_tamanho.py`) falha se o nome de um nicho aparecer num `.py`.
+
+- Hoje: `clinica` (página `/`) e `barbearia` (página `/barbearia`, demo em `/c/demo-barbearia`). Quem cria a conta escolhe o nicho na página de entrada.
+- **Nicho novo** = um objeto em `nichos.json` com as mesmas chaves de `clinica` (o teste cobra todas) + 3 fotos em `static/fundos` (cheia, `-m`, `-b`) com crédito em `static/creditos.json`. Nenhuma linha de Python.
+- **Catraca de tamanho:** `tamanho.json` guarda o teto de linhas do código e de bytes do JSON e o peso das fotos; o teto só desce (`tests/test_tamanho.py`).
+- A política de privacidade e o painel do dono ainda usam o texto de clínica para todos os nichos (dívida declarada).
+
+## Lembrete por WhatsApp (Evolution) — leia o risco
+
+Opcional e **desligado por padrão**. Cada agendamento pode gerar **1 confirmação e 1 lembrete** por WhatsApp, enviados pela instância do [Evolution API](https://github.com/EvolutionAPI/evolution-api) que **a própria clínica conectou** (o QR é lido no Evolution, não aqui).
+
+> **RISCO: o Evolution usa o WhatsApp Web (não oficial).** O WhatsApp pode **banir o número** que manda mensagem em massa, para quem não o tem salvo ou para quem denuncia. Use um **número só da clínica**, nunca para divulgação ou spam. Para volume ou garantia, use a API oficial da Meta (este projeto não a implementa).
+
+Como o desenho impede o uso como disparador de spam:
+- **Não existe operação** (REST, MCP ou painel) que receba número ou texto livre. O lembrete só nasce como consequência de um agendamento real e vai para o telefone de quem agendou, com o texto fixo do sistema.
+- Teto por clínica por dia (`WHATSAPP_TETO_DIA`, padrão 100), 3 s entre mensagens, 3 tentativas e instância desconectada não vira laço de erro.
+- Toda mensagem leva o link `/m/<código>/sem-lembrete`: o paciente para de receber (por telefone, naquela clínica) com um clique. O GET só mostra a página; só o POST descadastra (pré-visualizador de link não descadastra ninguém).
+- Para **ligar** é obrigatório `aceito_risco=true` (a API/MCP `whatsapp_configurar` recusa sem isso; o painel tem a caixa de ciência).
+- "enviado" quer dizer **aceito pelo Evolution**, não "chegou no aparelho": o Evolution não expõe a entrega.
+
+Configuração do servidor (o operador): `EVOLUTION_URL`, `EVOLUTION_KEY` (só no ambiente, nunca gravada nem devolvida) e `BASE_URL` (os links da mensagem precisam dele). Sem os três, a rotina nem sobe. Depois, a clínica liga em `/painel/whatsapp`, ou um agente com chave de escrita chama `whatsapp_configurar` (`whatsapp_status` e `lembretes_listar` mostram a situação).
+
 ## Código
 
 `nucleo.py` regras e SQL · `ops.py` operações (REST+MCP+OpenAPI) · `paginas.py` HTML · `app.py` servidor, painel, MCP · `tests/` (nome do teste = a falha que ele impede).

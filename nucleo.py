@@ -20,6 +20,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from nichos import NICHOS
+
 try:
     from zoneinfo import ZoneInfo
 except ImportError:  # pragma: no cover
@@ -71,7 +73,14 @@ create table if not exists sessoes(hash text primary key, usuario_id integer not
 create table if not exists chaves(id integer primary key, clinica_id integer not null references clinicas(id),
   nome text not null, prefixo text not null, hash text unique not null, escopo text not null, criado text,
   ultimo_uso text, revogada integer default 0);
+create table if not exists lembretes(id integer primary key, agendamento_id integer not null references agendamentos(id), tipo text not null,
+  enviar_em text not null, status text not null default 'pendente', tentativas integer default 0, detalhe text default '', atualizado text);
+create index if not exists lem_status on lembretes(status, enviar_em);
+create table if not exists sem_lembrete(clinica_id integer not null, tel text not null, criado text, primary key(clinica_id, tel));
 """
+# Colunas acrescentadas depois do 1º deploy: o banco de produção ganha sem perder dado (padrão de `listada`: 1 = indexável, decisão do dono em 05/11).
+COLUNAS_NOVAS = {"listada": "integer default 1", "whatsapp_ativo": "integer default 0", "whatsapp_instancia": "text default ''",
+                 "lembrete_horas": "integer default 24", "whatsapp_confirmacao": "integer default 0", "nicho": "text default 'clinica'"}
 
 
 class Banco:
@@ -83,10 +92,10 @@ class Banco:
         self._trava = threading.Lock()
         con = self._con()
         con.executescript(SCHEMA)
-        # Banco criado antes da coluna `listada` (produção de 05/11): acrescenta sem perder dado. Padrão 1 = indexável
-        # (decisão do dono em 05/11: "indexa tudo"); o operador tira uma clínica específica com `app.py delistar`.
-        if "listada" not in {r["name"] for r in con.execute("pragma table_info(clinicas)")}:
-            con.execute("alter table clinicas add column listada integer default 1")
+        tem = {r["name"] for r in con.execute("pragma table_info(clinicas)")}
+        for col, ddl in COLUNAS_NOVAS.items():
+            if col not in tem:
+                con.execute(f"alter table clinicas add column {col} {ddl}")
         con.close()
 
     def _con(self) -> sqlite3.Connection:
@@ -199,6 +208,64 @@ def _agora_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _inicio_utc(tz: str, d: dt.date, ini: int) -> dt.datetime:
+    fuso: Any = dt.timezone(dt.timedelta(hours=-3))
+    try:
+        fuso = ZoneInfo(tz)  # type: ignore[misc]
+    except (KeyError, ValueError, TypeError, OSError):  # fuso desconhecido ou sem tzdata: fica UTC-3 (Brasil)
+        pass
+    return dt.datetime.combine(d, dt.time(ini // 60, ini % 60), fuso).astimezone(dt.timezone.utc)
+
+
+def _programar(con: sqlite3.Connection, c: sqlite3.Row, aid: int, d: dt.date, ini: int, tel: str, confirmar: bool = True) -> None:
+    """Agenda os lembretes DESTA consulta (no máximo 1 confirmação + 1 lembrete) quando a clínica ligou o WhatsApp. É a única porta de
+    entrada de mensagem: não existe operação que mande texto para um número livre, e é isso que impede o uso como disparador de spam."""
+    con.execute("update lembretes set status='cancelado', atualizado=? where agendamento_id=? and status='pendente'", (_agora_iso(), aid))
+    if not c["whatsapp_ativo"] or con.execute("select 1 from sem_lembrete where clinica_id=? and tel=?", (c["id"], tel)).fetchone():
+        return
+    agora = dt.datetime.now(dt.timezone.utc)
+    inicio = _inicio_utc(c["tz"], d, ini)
+    quando: dt.datetime | None = inicio - dt.timedelta(hours=int(c["lembrete_horas"] or 24))
+    if quando < agora + dt.timedelta(minutes=1):  # marcou em cima da hora: lembra já se ainda faltam mais de 2 h, senão não adianta
+        quando = agora + dt.timedelta(minutes=1) if inicio - agora > dt.timedelta(hours=2) else None
+    if con.execute("select 1 from lembretes where agendamento_id=? and tipo='lembrete' and status='enviado'", (aid,)).fetchone():
+        quando = None  # remarcou depois de já ter sido lembrado: não manda de novo
+    for tipo, q in (("confirmacao", agora if (confirmar and c["whatsapp_confirmacao"]) else None), ("lembrete", quando)):
+        if q:
+            con.execute("insert into lembretes(agendamento_id,tipo,enviar_em,atualizado) values(?,?,?,?)",
+                        (aid, tipo, q.strftime("%Y-%m-%dT%H:%M:%SZ"), _agora_iso()))
+
+
+def _cancelar_lembretes(con: sqlite3.Connection, aid: int) -> None:
+    con.execute("update lembretes set status='cancelado', atualizado=? where agendamento_id=? and status='pendente'", (_agora_iso(), aid))
+
+
+INSTANCIA = re.compile(r"^[A-Za-z0-9_-]{3,40}$")
+
+
+def salvar_whatsapp(bd: Banco, c: sqlite3.Row, ativo: Any, instancia: Any, horas: Any, confirmacao: Any) -> None:
+    """Grava a configuração do WhatsApp da clínica. Quem exige a ciência do risco e o servidor Evolution é `lembretes.configurar`."""
+    liga = bool(c["whatsapp_ativo"]) if ativo is None else bool(ativo)
+    inst = str(c["whatsapp_instancia"] if instancia is None else instancia).strip()
+    try:
+        h = int(c["lembrete_horas"] if horas in (None, "") else horas)
+    except (TypeError, ValueError):
+        raise Erro(422, "antecedencia_invalida", "lembrete_horas deve ser um número de 1 a 72") from None
+    if inst and not INSTANCIA.fullmatch(inst):
+        raise Erro(422, "instancia_invalida", "o nome da instância tem de 3 a 40 letras, números, - ou _")
+    if liga and not inst:
+        raise Erro(422, "instancia_ausente", "informe o nome da instância do Evolution antes de ligar")
+    if not 1 <= h <= 72:
+        raise Erro(422, "antecedencia_invalida", "lembrete_horas deve ir de 1 a 72")
+    conf = int(c["whatsapp_confirmacao"] if confirmacao is None else bool(confirmacao))
+    with bd.escrita() as con:
+        con.execute("update clinicas set whatsapp_ativo=?, whatsapp_instancia=?, lembrete_horas=?, whatsapp_confirmacao=? where id=?",
+                    (int(liga), inst, h, conf, c["id"]))
+        if not liga:  # desligou: o que estava na fila não sai mais
+            con.execute("update lembretes set status='cancelado', atualizado=? where status='pendente' and "
+                        "agendamento_id in (select id from agendamentos where clinica_id=?)", (_agora_iso(), c["id"]))
+
+
 # ------------------------------------------------------------------ senha, sessão, chave
 
 def hash_senha(senha: str) -> str:
@@ -220,8 +287,10 @@ def _sha(texto: str) -> str:
     return hashlib.sha256(texto.encode()).hexdigest()
 
 
-def criar_clinica(bd: Banco, nome: str, email: str, senha: str, slug: str = "") -> dict:
+def criar_clinica(bd: Banco, nome: str, email: str, senha: str, slug: str = "", nicho: str = "clinica") -> dict:
     nome, email = str(nome or "").strip()[:100], str(email or "").strip().lower()[:120]
+    if nicho not in NICHOS:
+        raise Erro(422, "nicho_invalido", "tipo de negócio inválido: " + ", ".join(NICHOS))
     if not nome:
         raise Erro(422, "nome_obrigatorio", "informe o nome da clínica")
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
@@ -238,7 +307,7 @@ def criar_clinica(bd: Banco, nome: str, email: str, senha: str, slug: str = "") 
         while con.execute("select 1 from clinicas where slug=?", (final,)).fetchone():
             final = f"{base[:33]}-{secrets.token_hex(2)}"
         # O e-mail de login NÃO é copiado para o contato público (a clínica preenche o dela no painel).
-        cid = con.execute("insert into clinicas(slug,nome,email,criado) values(?,?,?,?)", (final, nome, "", _agora_iso())).lastrowid
+        cid = con.execute("insert into clinicas(slug,nome,email,criado,nicho) values(?,?,?,?,?)", (final, nome, "", _agora_iso(), nicho)).lastrowid
         con.execute("insert into usuarios(clinica_id,email,senha,criado) values(?,?,?,?)", (cid, email, hash_senha(senha), _agora_iso()))
     return dict(bd.um("select * from clinicas where id=?", (cid,)))
 
@@ -446,7 +515,7 @@ def info_publica(bd: Banco, c: sqlite3.Row) -> dict:
         profs.append({"id": p["id"], "nome": p["nome"], "especialidade": p["especialidade"], "registro": p["registro"],
                       "bio": p["bio"], "disponibilidade": disponibilidade_de(bd, p["id"])})
     return {"clinica": {**{k: c[k] for k in ("slug", "nome", "descricao", "telefone", "email", "cidade", "tz", "passo_min", "antecedencia_min")},
-                        "indexavel": bool(c["listada"])},
+                        "nicho": c["nicho"], "indexavel": bool(c["listada"]), "lembrete_whatsapp": bool(c["whatsapp_ativo"])},
             "locais": [{k: r[k] for k in ("id", "nome", "endereco", "cidade")} for r in bd.ler("select * from locais where clinica_id=? and ativo=1 order by nome", (c["id"],))],
             "profissionais": profs,
             "servicos": [{"id": r["id"], "nome": r["nome"], "duracao_min": r["duracao_min"], "preco_centavos": r["preco_centavos"]}
@@ -567,6 +636,7 @@ def agendar(bd: Banco, c: sqlite3.Row, servico_id: int, profissional_id: int, da
                           (c["id"], p["id"], alvo["local_id"], s["id"], nome, tel, email, d.isoformat(), ini, ini + s["duracao_min"],
                            codigo, origem, _agora_iso(), _agora_iso())).lastrowid
         con.execute("insert into eventos(agendamento_id,quando,tipo,detalhe) values(?,?,?,?)", (aid, _agora_iso(), "criado", origem))
+        _programar(con, c, aid, d, ini, tel)
     return _ag_dict(bd, bd.um("select * from agendamentos where id=?", (aid,)))
 
 
@@ -590,6 +660,7 @@ def cancelar(bd: Banco, r: sqlite3.Row, por: str) -> dict:
     with bd.escrita() as con:
         con.execute("update agendamentos set status='cancelado', cancelado_por=?, atualizado=? where id=?", (por, _agora_iso(), r["id"]))
         con.execute("insert into eventos(agendamento_id,quando,tipo,detalhe) values(?,?,?,?)", (r["id"], _agora_iso(), "cancelado", por))
+        _cancelar_lembretes(con, r["id"])
     return _ag_dict(bd, bd.um("select * from agendamentos where id=?", (r["id"],)))
 
 
@@ -610,6 +681,7 @@ def remarcar(bd: Banco, c: sqlite3.Row, r: sqlite3.Row, data: str, hora: str, pr
                     (prof, alvo["local_id"], d.isoformat(), ini, ini + dur, _agora_iso(), r["id"]))
         con.execute("insert into eventos(agendamento_id,quando,tipo,detalhe) values(?,?,?,?)",
                     (r["id"], _agora_iso(), "remarcado", f"{por}: de {r['data']} {hhmm(r['inicio'])} para {d.isoformat()} {hhmm(ini)}"))
+        _programar(con, c, r["id"], d, ini, r["paciente_tel"], confirmar=False)
     return _ag_dict(bd, bd.um("select * from agendamentos where id=?", (r["id"],)))
 
 
@@ -662,6 +734,7 @@ def bloquear(bd: Banco, c: sqlite3.Row, inicio: str, fim: str, profissional_id: 
         for r in conflitos:
             con.execute("update agendamentos set status='cancelado', cancelado_por='clinica', atualizado=? where id=?", (_agora_iso(), r["id"]))
             con.execute("insert into eventos(agendamento_id,quando,tipo,detalhe) values(?,?,?,?)", (r["id"], _agora_iso(), "cancelado", f"bloqueio {bid}"))
+            _cancelar_lembretes(con, r["id"])
     return {"id": bid, "inicio": ini, "fim": fi, "profissional_id": profissional_id, "motivo": motivo,
             "consultas_canceladas": [_ag_dict(bd, bd.um("select * from agendamentos where id=?", (r["id"],))) for r in conflitos]}
 

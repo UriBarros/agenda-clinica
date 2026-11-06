@@ -78,5 +78,29 @@
   "alt": "Profissional anotando durante a consulta",
   "cor": "#adb4b9",
   "licenca": "Licença Pexels (uso livre)"
+ },
+ "barbearia-tijolo": {
+  "fonte": "Unsplash",
+  "fotografo": "Nathon Oski",
+  "pagina": "https://unsplash.com/photos/EW_rqoSdDes",
+  "alt": "Cadeira de barbeiro de couro preto junto a uma parede de tijolos",
+  "cor": "#533b28",
+  "licenca": "Licença Unsplash (uso livre)"
+ },
+ "barbearia-espelho": {
+  "fonte": "Unsplash",
+  "fotografo": "Redd Francisco",
+  "pagina": "https://unsplash.com/photos/BBGyxhtPpC0",
+  "alt": "Cadeira de barbeiro diante de um espelho",
+  "cor": "#413729",
+  "licenca": "Licença Unsplash (uso livre)"
+ },
+ "barbearia-salao": {
+  "fonte": "Unsplash",
+  "fotografo": "František Čaník",
+  "pagina": "https://unsplash.com/photos/tX5JNBNSJic",
+  "alt": "Barbearia com parede de tijolos e várias cadeiras",
+  "cor": "#76635b",
+  "licenca": "Licença Unsplash (uso livre)"
  }
 }

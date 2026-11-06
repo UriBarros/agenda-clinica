@@ -25,11 +25,14 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import lembretes as lem
+import nichos as nx
 import nucleo as n
 import ops
 import paginas as pg
 
 VERSAO = "1.0.0"
+DEMOS = "(" + ",".join(repr(v["home"]["demo_slug"]) for v in nx.NICHOS.values()) + ")"  # slugs vindos do nichos.json (constante nossa, nunca de usuário)
 REPO_URL = os.environ.get("REPO_URL", "https://github.com/thiagopatzdorf/agenda-clinica")
 MAX_CORPO = 64 * 1024
 MCP_VERSOES = ("2025-06-18", "2025-03-26", "2024-11-05")
@@ -37,7 +40,7 @@ CSP = ("default-src 'self'; style-src 'unsafe-inline'; img-src 'self' https: dat
        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 INSTRUCOES_MCP = ("Agendamento de consultas. Fluxo: clinica_info -> horarios_livres -> agendar (guarde o `codigo`). "
                   "Nunca invente horário. Só envie consentimento=true se o paciente concordou. "
-                  "O sistema não envia mensagens: avise o paciente ao cancelar ou remarcar. Não grave dado clínico.")
+                  "Só sai lembrete por WhatsApp se a clínica ligou; ao cancelar ou remarcar, avise o paciente. Não grave dado clínico.")
 
 
 Limitador = n.Limitador
@@ -53,22 +56,19 @@ TIMEOUT_SOCKET_S = 15
 
 
 def semear_demo(bd: n.Banco) -> None:
-    if bd.um("select 1 from clinicas where slug='demo'"):
-        return
-    c = n.criar_clinica(bd, "Clínica Demonstração", "demo@exemplo.invalid", os.urandom(12).hex(), "demo")
-    n.salvar_clinica(bd, bd.um("select * from clinicas where id=?", (c["id"],)), {
-        "descricao": "Clínica fictícia para testar o agendamento e a API. Os dados daqui são de teste e podem ser apagados.",
-        "cidade": "Florianópolis", "telefone": "48999990000"})
-    cid = c["id"]
-    centro = n.salvar_local(bd, cid, {"nome": "Unidade Centro", "endereco": "Rua Exemplo, 100", "cidade": "Florianópolis"})
-    praia = n.salvar_local(bd, cid, {"nome": "Unidade Praia", "endereco": "Av. da Praia, 200", "cidade": "Florianópolis"})
-    ana = n.salvar_profissional(bd, cid, {"nome": "Dra. Ana Lima", "especialidade": "Psicologia", "registro": "CRP 00/00000", "bio": "Atendimento adulto e de casal."})
-    bia = n.salvar_profissional(bd, cid, {"nome": "Dra. Bia Souza", "especialidade": "Nutrição", "registro": "CRN 0/00000", "bio": "Reeducação alimentar e esportiva."})
-    n.definir_disponibilidade(bd, cid, ana, [{"dia": d, "inicio": "09:00", "fim": "12:00", "local_id": centro} for d in (1, 3)]
-                              + [{"dia": d, "inicio": "14:00", "fim": "18:00", "local_id": praia} for d in (2, 4)])
-    n.definir_disponibilidade(bd, cid, bia, [{"dia": d, "inicio": "08:00", "fim": "12:00", "local_id": centro} for d in range(1, 6)])
-    n.salvar_servico(bd, cid, {"nome": "Consulta", "duracao_min": 50, "preco_centavos": 20000})
-    n.salvar_servico(bd, cid, {"nome": "Retorno", "duracao_min": 30, "preco_centavos": 12000})
+    """Uma demonstração por nicho, lida de nichos.json (idempotente)."""
+    for chave, v in nx.NICHOS.items():
+        slug, d = v["home"]["demo_slug"], v["demo"]
+        if bd.um("select 1 from clinicas where slug=?", (slug,)):
+            continue
+        c = n.criar_clinica(bd, d["nome"], f"{slug}@exemplo.invalid", os.urandom(12).hex(), slug, chave)  # e-mail único por demo
+        n.salvar_clinica(bd, bd.um("select * from clinicas where id=?", (c["id"],)), {"descricao": d["descricao"], "cidade": "Florianópolis", "telefone": "48999990000"})
+        locais = [n.salvar_local(bd, c["id"], {"nome": nome, "endereco": end, "cidade": "Florianópolis"}) for nome, end in d["locais"]]
+        for p in d["profissionais"]:
+            pid = n.salvar_profissional(bd, c["id"], {k: p[k] for k in ("nome", "especialidade", "registro", "bio")})
+            n.definir_disponibilidade(bd, c["id"], pid, [{"dia": dia, "inicio": ini, "fim": fim, "local_id": locais[li]} for dias, ini, fim, li in p["janelas"] for dia in dias])
+        for nome, dur, preco in d["servicos"]:
+            n.salvar_servico(bd, c["id"], {"nome": nome, "duracao_min": dur, "preco_centavos": preco})
 
 
 def listar_clinica(bd: n.Banco, slug: str, listar: bool = True) -> None:
@@ -82,10 +82,10 @@ def listar_clinica(bd: n.Banco, slug: str, listar: bool = True) -> None:
 def metricas(bd: n.Banco) -> dict:
     """Números do lançamento, medidos no banco (sem dado de paciente): clínicas, consultas por origem, chaves de API em uso."""
     um = lambda sql: bd.um(sql)[0]
-    return {"clinicas": um("select count(*) from clinicas where slug!='demo'"),
-            "clinicas_com_agenda_montada": um("select count(distinct clinica_id) from disponibilidade d join profissionais p on p.id=d.profissional_id where p.clinica_id in (select id from clinicas where slug!='demo')"),
-            "agendamentos_confirmados": um("select count(*) from agendamentos a join clinicas c on c.id=a.clinica_id where c.slug!='demo' and a.status='confirmado'"),
-            "agendamentos_por_origem": {r[0]: r[1] for r in bd.ler("select a.origem, count(*) from agendamentos a join clinicas c on c.id=a.clinica_id where c.slug!='demo' group by 1")},
+    return {"clinicas": um(f"select count(*) from clinicas where slug not in {DEMOS}"),
+            "clinicas_com_agenda_montada": um(f"select count(distinct clinica_id) from disponibilidade d join profissionais p on p.id=d.profissional_id where p.clinica_id in (select id from clinicas where slug not in {DEMOS})"),
+            "agendamentos_confirmados": um(f"select count(*) from agendamentos a join clinicas c on c.id=a.clinica_id where c.slug not in {DEMOS} and a.status='confirmado'"),
+            "agendamentos_por_origem": {r[0]: r[1] for r in bd.ler(f"select a.origem, count(*) from agendamentos a join clinicas c on c.id=a.clinica_id where c.slug not in {DEMOS} group by 1")},
             "chaves_de_api_usadas": um("select count(*) from chaves where ultimo_uso is not null")}
 
 
@@ -346,7 +346,7 @@ def fazer_handler(app: App):
                 return self._enviar(200, f"User-agent: *\nAllow: /\nDisallow: /painel\nDisallow: /api/\nDisallow: /m/\nSitemap: {base}/sitemap.xml\n", "text/plain")
             if caminho == "/sitemap.xml":
                 slugs = [r["slug"] for r in app.bd.ler("select slug from clinicas where listada=1 order by id limit 5000")]
-                urls = ["", "/docs", "/privacidade", "/creditos"] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
+                urls = ["", "/docs", "/privacidade", "/creditos"] + [f"/{k}" for k in nx.NICHOS if k != nx.PADRAO] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
                 return self._enviar(200, '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
                                     + "".join(f"<url><loc>{pg.e(base + u)}</loc></url>" for u in urls) + "</urlset>", "application/xml")
             if caminho == "/openapi.json" and metodo == "GET":
@@ -361,8 +361,9 @@ def fazer_handler(app: App):
                 return self._enviar(200, pg.creditos())
             if caminho.startswith("/static/fundos/"):
                 return self._foto(caminho[len("/static/fundos/"):])
-            if caminho == "/":
-                return self._enviar(200, pg.home(REPO_URL, bool(app.bd.um("select 1 from clinicas where slug='demo'"))))
+            if caminho == "/" or (caminho[1:] in nx.NICHOS and caminho[1:] != nx.PADRAO):
+                k = caminho[1:] or nx.PADRAO
+                return self._enviar(200, pg.home(REPO_URL, bool(app.bd.um("select 1 from clinicas where slug=?", (nx.NICHOS[k]["home"]["demo_slug"],))), nicho=k))
             if caminho == "/criar" and metodo == "POST":
                 if not app.lim.passa("criar", _ip(self), *LIMITES_TAXA["criar"]):
                     raise n.Erro(429, "muitas_requisicoes", "muitas clínicas criadas deste endereço; tente mais tarde")
@@ -370,11 +371,12 @@ def fazer_handler(app: App):
                     raise n.Erro(429, "cadastros_pausados", "o limite diário de novas clínicas foi atingido; tente amanhã")
                 f = self._form()
                 try:
-                    n.criar_clinica(app.bd, f.get("nome", ""), f.get("email", ""), f.get("senha", ""))
+                    nicho = f.get("nicho", nx.PADRAO)
+                    n.criar_clinica(app.bd, f.get("nome", ""), f.get("email", ""), f.get("senha", ""), nicho=nicho)
                 except n.Erro as e:
-                    return self._enviar(e.status, pg.home(REPO_URL, False, e.mensagem))
+                    return self._enviar(e.status, pg.home(REPO_URL, False, e.mensagem, nx.chave({"nicho": f.get("nicho")})))
                 return self._entrar_e_ir(f.get("email", ""), f.get("senha", ""), "/painel/equipe?" + urllib.parse.urlencode(
-                    {"msg": "Clínica criada. Cadastre locais, profissionais, serviços e horários."}))
+                    {"msg": nx.NICHOS[nicho]["nome"].capitalize() + " criada. Cadastre locais, profissionais, serviços e horários."}))
             if caminho == "/entrar":
                 if metodo == "GET":
                     return self._enviar(200, pg.entrar())
@@ -431,11 +433,15 @@ def fazer_handler(app: App):
 
         def _paciente(self, metodo, partes, base):
             r, c = n.agendamento_por_codigo(app.bd, partes[1])
-            clin = {"nome": c["nome"], "slug": c["slug"]}
+            clin = {"nome": c["nome"], "slug": c["slug"], "nicho": c["nicho"]}
             acao = partes[2] if len(partes) == 3 else ""
             ver = lambda erro="": self._enviar(200, pg.consulta(n._ag_dict(app.bd, r, False), clin, erro), extra={"Cache-Control": "no-store"})
             if not acao:
                 return ver()
+            if acao == "sem-lembrete":
+                if metodo == "POST":
+                    lem.nao_quero(app.bd, r["codigo"])
+                return self._enviar(200, pg.sem_lembrete(n._ag_dict(app.bd, r, False), clin, metodo == "POST"), extra={"Cache-Control": "no-store"})
             if acao == "cancelar" and metodo == "POST":
                 try:
                     n.cancelar(app.bd, r, "paciente")
@@ -477,6 +483,8 @@ def fazer_handler(app: App):
                 return self._enviar(200, pg.equipe(c, tok, info, q.get("msg", ""), q.get("erro", "")), extra=nocache)
             if caminho == "/painel/api":
                 return self._enviar(200, pg.painel_api(c, tok, n.listar_chaves(app.bd, c["id"]), base), extra=nocache)
+            if caminho == "/painel/whatsapp":
+                return self._enviar(200, pg.painel_whatsapp(c, tok, lem.estado(app.bd, c), q.get("msg", ""), q.get("erro", "")), extra=nocache)
             if caminho == "/painel/remarcar":
                 r = n.agendamento_da_clinica(app.bd, c, int(q.get("id") or 0))
                 return self._enviar(200, pg.remarcar_painel(c, tok, n._ag_dict(app.bd, r), _quinzena(app.bd, c, r["servico_id"]),
@@ -575,6 +583,11 @@ def _a_criar_chave(bd, c, f):
     return n.criar_chave(bd, c["id"], f.get("nome", ""), f.get("escopo", "leitura"))
 
 
+def _a_whatsapp(bd, c, f):
+    lem.configurar(bd, c, f.get("ativo") == "1", f.get("instancia", ""), f.get("lembrete_horas"), f.get("confirmacao") == "1", f.get("aceito_risco") == "1")
+    return "WhatsApp salvo."
+
+
 def _a_revogar_chave(bd, c, f):
     n.revogar_chave(bd, c["id"], _i(f.get("id"), 0))
     return "Chave revogada."
@@ -582,7 +595,7 @@ def _a_revogar_chave(bd, c, f):
 
 ACOES = {"cancelar": _a_cancelar, "remarcar": _a_remarcar, "bloquear": _a_bloquear, "remover_bloqueio": _a_remover_bloqueio,
          "clinica": _a_clinica, "salvar_local": _a_local, "salvar_profissional": _a_profissional, "salvar_servico": _a_servico,
-         "disponibilidade": _a_disponibilidade, "criar_chave": _a_criar_chave, "revogar_chave": _a_revogar_chave}
+         "disponibilidade": _a_disponibilidade, "criar_chave": _a_criar_chave, "revogar_chave": _a_revogar_chave, "whatsapp": _a_whatsapp}
 
 
 class Servidor(ThreadingHTTPServer):
@@ -625,7 +638,7 @@ if __name__ == "__main__":
     dados = Path(os.environ.get("DATA_DIR", "data"))
     if sys.argv[1:2] == ["demo"]:
         semear_demo(n.Banco(dados))
-        print("clínica demo pronta em /c/demo")
+        print("demonstrações prontas em", ", ".join("/c/" + v["home"]["demo_slug"] for v in nx.NICHOS.values()))
     elif sys.argv[1:2] in (["listar"], ["delistar"]) and len(sys.argv) == 3:
         listar_clinica(n.Banco(dados), sys.argv[2], sys.argv[1] == "listar")
         print(f"{sys.argv[2]}: {'listada' if sys.argv[1] == 'listar' else 'fora da lista'}")
@@ -639,5 +652,6 @@ if __name__ == "__main__":
         if os.environ.get("DEMO", "") == "1":
             semear_demo(app.bd)
         threading.Thread(target=_rotina_backup, args=(app.bd, dados / "backups"), daemon=True).start()
+        print("lembretes por WhatsApp:", "ligados (Evolution configurado)" if lem.iniciar(app.bd, os.environ.get("BASE_URL", "").rstrip("/")) else "desligados (sem EVOLUTION_URL/EVOLUTION_KEY/BASE_URL)", flush=True)
         print(f"agenda-clinica {VERSAO} em :{srv.server_address[1]} (dados em {dados})", flush=True)
         srv.serve_forever()

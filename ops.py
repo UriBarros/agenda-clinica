@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
+import lembretes as lem
 import nucleo as n
 
 NIVEL = {"publico": 0, "leitura": 1, "escrita": 2}
@@ -166,7 +167,7 @@ def _listar_bl(bd, c, a):
 
 # ---------------------------------------------------------------- com chave: escrita
 
-@op("cancelar_agendamento", "Cancela um agendamento (a clínica cancelando). Avise o paciente: este sistema não envia mensagens.",
+@op("cancelar_agendamento", "Cancela um agendamento (a clínica cancelando). Avise o paciente (os lembretes por WhatsApp, se ligados, são só de consultas confirmadas).",
     "POST", "/agendamentos/{id}/cancelar", [P("id", "integer", "id do agendamento", True)], nivel="escrita", por="chave")
 def _cancelar_ag(bd, c, a):
     return n.cancelar(bd, n.agendamento_da_clinica(bd, c, a["id"]), "clinica")
@@ -241,6 +242,32 @@ def _config(bd, c, a):
     return n.info_publica(bd, n.clinica_por_slug(bd, c["slug"]))["clinica"]
 
 
+@op("whatsapp_status", "Estado do lembrete por WhatsApp (Evolution) da clínica: se o servidor tem Evolution, se está ligado, se a instância está conectada, "
+    "quantos lembretes por status e o AVISO DE RISCO (número não oficial pode ser banido; só sai lembrete para quem agendou).",
+    "GET", "/whatsapp", [], nivel="leitura", por="chave")
+def _wa_status(bd, c, a):
+    return lem.estado(bd, c)
+
+
+@op("whatsapp_configurar", "Liga/desliga e configura o lembrete por WhatsApp da clínica pela instância do Evolution que a clínica conectou. "
+    "NÃO existe operação para mandar mensagem a um número: os lembretes saem sozinhos, só para quem agendou (1 confirmação e 1 lembrete por consulta, com link "
+    "para não receber mais). Para LIGAR é obrigatório aceito_risco=true: o Evolution é não oficial e o WhatsApp pode banir o número; use um número só da clínica "
+    "e nunca para divulgação ou spam.", "PATCH", "/whatsapp",
+    [P("ativo", "boolean", "ligar ou desligar os lembretes"), P("instancia", "string", "nome da instância do Evolution (3 a 40 letras, números, - ou _)"),
+     P("lembrete_horas", "integer", "quantas horas antes da consulta (1 a 72; padrão 24)"),
+     P("confirmacao", "boolean", "também mandar uma confirmação logo ao agendar"),
+     P("aceito_risco", "boolean", "obrigatório para ligar: confirma que leu o aviso de risco")], nivel="escrita", por="chave")
+def _wa_config(bd, c, a):
+    return lem.configurar(bd, c, a.get("ativo"), a.get("instancia"), a.get("lembrete_horas"), a.get("confirmacao"), a.get("aceito_risco"))
+
+
+@op("lembretes_listar", "Últimos lembretes de WhatsApp da clínica (status: pendente, enviado, falhou, cancelado), com o telefone mascarado. "
+    "'enviado' significa aceito pelo Evolution, não que chegou no aparelho.", "GET", "/lembretes",
+    [P("limite", "integer", "quantos (1 a 200; padrão 50)")], nivel="leitura", por="chave")
+def _wa_lista(bd, c, a):
+    return {"lembretes": lem.lista(bd, c, a.get("limite") or 50)}
+
+
 # ---------------------------------------------------------------- consumidores da tabela
 
 def _json_schema(params: list[dict]) -> dict:
@@ -301,5 +328,5 @@ def llms_txt(servidor: str) -> str:
               "Operações públicas (sem chave): " + ", ".join(o["nome"] for o in OPS.values() if o["nivel"] == "publico") + ".",
               "Operações com chave de API (Authorization: Bearer ac_...): " + ", ".join(o["nome"] for o in OPS.values() if o["nivel"] != "publico") + ".", "",
               "Fluxo: clinica_info -> horarios_livres -> agendar (guarde o `codigo`) -> ver_consulta / cancelar_consulta / remarcar_consulta.",
-              "Nunca invente horário: só agende um que horarios_livres devolveu. Este sistema não envia mensagens ao paciente."]
+              "Nunca invente horário: só agende um que horarios_livres devolveu. Só sai mensagem se a clínica ligou o WhatsApp (whatsapp_status), e só lembrete de consulta real."]
     return "\n".join(linhas) + "\n"
