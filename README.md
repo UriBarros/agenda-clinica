@@ -84,6 +84,21 @@ A página `/devs` do serviço resume isto. Código MIT, Python 3.12 e SQLite, na
 - **Apagar o que ficou no servidor antigo:** `python3 app.py apagar <slug> --confirmo` (sem volta: exporte antes). Dado de paciente é da clínica (LGPD); quem hospeda é operador.
 - **Gerenciar por API ou MCP:** chaves por clínica no painel (leitura ou escrita); o mesmo contrato vale no nosso servidor e no seu (`/mcp`, `/openapi.json`).
 
+## Conta de dev: uma conta, vários clientes
+
+Para agência, integrador ou o amigo que "faz o sistema" da clínica. Cadastro aberto em `/dev/cadastro` (e-mail e senha; limite por endereço e por dia). A conta tem:
+
+- **Clientes (CRUD):** criar (clínica, barbearia ou outro tipo de `nichos.json`), listar, definir o login do cliente (`dev_clinica_acesso`), exportar e apagar (com confirmação do slug; sem volta). Limite de 50 clientes por conta.
+- **Suporte:** "Entrar como suporte" abre o painel do cliente por 8 h. O dev **vê nome e telefone dos pacientes dos próprios clientes** (decisão de produto: o dev dá o suporte) e a política de privacidade avisa o paciente.
+- **Chave de dev (`ad_...`)** por API e MCP: as operações dev_* e todas as de chave, com `clinica=<slug do cliente>`. Nunca vale em cliente de outro dev (nem na demonstração).
+- O painel é `/dev`; o cookie da conta de dev vale só em `/dev` e é separado do cookie do painel da clínica.
+- **Entrar com Google e GitHub** (OAuth 2.0 com PKCE, sem biblioteca): `oauth.py`. O botão de cada provedor só aparece se o servidor tem `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` ou `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`. Endereço de retorno a cadastrar no provedor: `<BASE_URL>/entrar/google/retorno` e `<BASE_URL>/entrar/github/retorno`. **Só vale e-mail verificado pelo provedor** (no GitHub, o primário verificado); conta nova respeita o limite diário e conta existente com o mesmo e-mail verificado é ligada, nunca duplicada. Os testes rodam contra um provedor falso local.
+
+## Protocolo aberto e personalização
+
+- **Protocolo (`PROTOCOLO.md`, `schema/agenda-clinica-1.schema.json`, rotas `/protocolo`, `/protocolo.md`, `/schema/agenda-clinica-1.json`):** o contrato que um servidor precisa falar para ser compatível (API e MCP, escopos, erros, chaves de clínica e de dev, e o arquivo de intercâmbio `agenda-clinica/1`). Um teste confere que o esquema descreve **exatamente** o que o servidor exporta: campo novo no código sem o esquema derruba o teste.
+- **Personalização por cliente** (conta de dev: `dev_clinica_personalizar` ou o painel `/dev`): `cor` de destaque e `rotulos` (os textos do site e da página do cliente final, só chaves de `nichos.json`). Regra medida, não gosto: cor com contraste 4,5:1 contra o branco do botão (WCAG AA), rótulo sem HTML nem aspas e até 80 caracteres. A cor vale no tema claro; o escuro mantém o tom padrão. A personalização viaja no arquivo de exportação.
+
 ## Lembrete por WhatsApp (Evolution) — leia o risco
 
 Opcional e **desligado por padrão**. Cada agendamento pode gerar **1 confirmação e 1 lembrete** por WhatsApp, enviados pela instância do [Evolution API](https://github.com/EvolutionAPI/evolution-api) que **a própria clínica conectou** (o QR é lido no Evolution, não aqui).

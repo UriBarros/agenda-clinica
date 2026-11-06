@@ -103,7 +103,7 @@ def test_mcp_lista_so_ferramentas_publicas_sem_chave_e_todas_com_chave(srv):
     assert st == 200 and init["result"]["serverInfo"]["name"] == "agenda-clinica"
     pub = {t["name"] for t in rpc("tools/list")[1]["result"]["tools"]}
     com = {t["name"] for t in rpc("tools/list", cab={"Authorization": f"Bearer {chave(a)}"})[1]["result"]["tools"]}
-    assert pub == {o["nome"] for o in ops.OPS.values() if o["nivel"] == "publico"} and com == set(ops.OPS)
+    assert pub == {o["nome"] for o in ops.OPS.values() if o["nivel"] == "publico"} and com == {o['nome'] for o in ops.OPS.values() if o['nivel'] != 'dev'}  # as operações de dev só aparecem para chave ad_
     assert req(porta, "POST", "/mcp", {"jsonrpc": "2.0", "method": "notifications/initialized"})[0] == 202
 
 

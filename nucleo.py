@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover
 LIMITES = {"profissionais": 30, "locais": 20, "servicos": 60, "chaves": 10,
            "futuros_por_telefone": 5, "horizonte_dias": 120, "janela_consulta_dias": 14,
            # Teto de linhas por resposta de horários: sem ele, uma clínica de 30 profissionais 24 h devolvia ~7 MB por chamada.
-           "linhas_horarios": 300, "anonimos_por_clinica_hora": 60, "clinicas_novas_por_dia": 100}
+           "linhas_horarios": 300, "anonimos_por_clinica_hora": 60, "clinicas_novas_por_dia": 100, "devs_novos_por_dia": 200, "clinicas_por_dev": 50}
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$")
 RESERVADOS = {"api", "admin", "painel", "mcp", "docs", "entrar", "sair", "criar", "health", "demo-admin"}
 
@@ -77,10 +77,14 @@ create table if not exists lembretes(id integer primary key, agendamento_id inte
   enviar_em text not null, status text not null default 'pendente', tentativas integer default 0, detalhe text default '', atualizado text);
 create index if not exists lem_status on lembretes(status, enviar_em);
 create table if not exists sem_lembrete(clinica_id integer not null, tel text not null, criado text, primary key(clinica_id, tel));
+create table if not exists devs(id integer primary key, email text unique not null, nome text default '', senha text default '', google_sub text, github_id text, criado text);
+create table if not exists dev_sessoes(hash text primary key, dev_id integer not null references devs(id), expira text not null);
+create table if not exists chaves_dev(id integer primary key, dev_id integer not null references devs(id), nome text not null, prefixo text not null,
+  hash text unique not null, criado text, ultimo_uso text, revogada integer default 0);
 """
 # Colunas acrescentadas depois do 1º deploy: o banco de produção ganha sem perder dado (padrão de `listada`: 1 = indexável, decisão do dono em 05/11).
 COLUNAS_NOVAS = {"listada": "integer default 1", "whatsapp_ativo": "integer default 0", "whatsapp_instancia": "text default ''",
-                 "lembrete_horas": "integer default 24", "whatsapp_confirmacao": "integer default 0", "nicho": "text default 'clinica'"}
+                 "lembrete_horas": "integer default 24", "whatsapp_confirmacao": "integer default 0", "nicho": "text default 'clinica'", "dev_id": "integer", "personalizar": "text default ''"}
 
 
 class Banco:
@@ -515,7 +519,7 @@ def info_publica(bd: Banco, c: sqlite3.Row) -> dict:
         profs.append({"id": p["id"], "nome": p["nome"], "especialidade": p["especialidade"], "registro": p["registro"],
                       "bio": p["bio"], "disponibilidade": disponibilidade_de(bd, p["id"])})
     return {"clinica": {**{k: c[k] for k in ("slug", "nome", "descricao", "telefone", "email", "cidade", "tz", "passo_min", "antecedencia_min")},
-                        "nicho": c["nicho"], "indexavel": bool(c["listada"]), "lembrete_whatsapp": bool(c["whatsapp_ativo"])},
+                        "nicho": c["nicho"], "personalizar": c["personalizar"], "indexavel": bool(c["listada"]), "lembrete_whatsapp": bool(c["whatsapp_ativo"])},
             "locais": [{k: r[k] for k in ("id", "nome", "endereco", "cidade")} for r in bd.ler("select * from locais where clinica_id=? and ativo=1 order by nome", (c["id"],))],
             "profissionais": profs,
             "servicos": [{"id": r["id"], "nome": r["nome"], "duracao_min": r["duracao_min"], "preco_centavos": r["preco_centavos"]}

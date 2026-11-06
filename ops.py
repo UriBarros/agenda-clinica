@@ -12,14 +12,16 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
+import devs as dv
 import lembretes as lem
 import migracao as mig
 import nucleo as n
 
-NIVEL = {"publico": 0, "leitura": 1, "escrita": 2}
+NIVEL = {"publico": 0, "leitura": 1, "escrita": 2, "dev": 3}  # "dev": chave de conta de dev (ad_...), vale como escrita em cada clínica dos clientes dele
 OPS: dict[str, dict] = {}
 # Agendamentos SEM chave por clínica: um atacante com vários IPs não esvazia a agenda de uma clínica em minutos.
 LIM_CLINICA = n.Limitador()
+LIM_DEV = n.Limitador()
 
 
 def P(nome: str, tipo: str, desc: str, obrig: bool = False) -> dict:
@@ -72,7 +74,14 @@ def executar(bd: n.Banco, nome: str, args: dict, auth: tuple | None, origem: str
             raise n.Erro(422, "parametro_obrigatorio", f"falta o parâmetro {p['nome']!r}")
     a["_origem"] = origem
     c = None
-    if o["por"] == "chave" or (o["por"] == "slug" and auth and not a.get("clinica")):
+    dev = auth[0] if auth and auth[1] == "dev" else None
+    if o["por"] == "dev":
+        c = dev  # operações da conta de dev: o "alvo" é o próprio dev
+    elif dev and o["por"] == "chave":
+        c = dv.clinica_do_dev(bd, dev, str(args.get("clinica") or ""))  # chave de dev: `clinica` = slug do cliente, sempre dele
+    elif dev and o["por"] == "slug":
+        c = n.clinica_por_slug(bd, a.get("clinica", ""))
+    elif o["por"] == "chave" or (o["por"] == "slug" and auth and not a.get("clinica")):
         c = auth[0]
     elif o["por"] == "slug":
         c = n.clinica_por_slug(bd, a.get("clinica", ""))
@@ -165,6 +174,49 @@ def _ver_ag(bd, c, a):
     "GET", "/exportar", [P("com_pacientes", "boolean", "inclui os agendamentos (dado de paciente; padrão: não)")], nivel="leitura", por="chave")
 def _exportar(bd, c, a):
     return mig.exportar(bd, c, bool(a.get("com_pacientes")))
+
+
+# ---------------------------------------------------------------- conta de dev (só com chave ad_...)
+
+@op("dev_clinicas_listar", "Lista os clientes (clínicas e outros negócios com hora marcada) desta conta de dev, com o número de agendamentos futuros de cada um. "
+    "Com a chave de dev, qualquer outra operação de chave age num cliente: passe `clinica` com o endereço (slug) dele.",
+    "GET", "/dev/clinicas", [], nivel="dev", por="dev")
+def _dev_listar(bd, dev, a):
+    return {"clinicas": dv.clinicas(bd, dev)}
+
+
+@op("dev_clinica_criar", "Cria um cliente (um tipo de negócio de nichos.json: clínica ou outro) no nosso servidor. Devolve o slug; use-o em `clinica` nas "
+    "demais operações, e dev_clinica_acesso para entregar o login ao cliente.", "POST", "/dev/clinicas",
+    [P("nome", "string", "nome do negócio", True), P("nicho", "string", "tipo de negócio, uma chave de nichos.json (padrão: clinica)"), P("slug", "string", "endereço desejado (opcional)"),
+     P("cidade", "string", "cidade"), P("telefone", "string", "telefone com DDD")], nivel="dev", por="dev", ok=201)
+def _dev_criar(bd, dev, a):
+    if not LIM_DEV.passa("clinica_criar", str(dev["id"]), 20, 3600):
+        raise n.Erro(429, "muitas_requisicoes", "no máximo 20 clientes novos por hora por conta de dev")
+    return dv.criar_clinica(bd, dev, a["nome"], a.get("nicho", "clinica"), a.get("slug", ""), a.get("cidade", ""), a.get("telefone", ""))
+
+
+@op("dev_clinica_acesso", "Define o login do cliente no painel dele (e-mail e senha de 10+ caracteres) e encerra as sessões antigas dele.",
+    "POST", "/dev/clinicas/{clinica}/acesso", [P("clinica", "string", "slug do cliente", True), P("email", "string", "e-mail do cliente", True),
+                                                P("senha", "string", "senha nova (10+ caracteres)", True)], nivel="dev", por="dev")
+def _dev_acesso(bd, dev, a):
+    dv.definir_acesso(bd, dev, a["clinica"], a["email"], a["senha"])
+    return {"ok": True}
+
+
+@op("dev_clinica_personalizar", "Personaliza o cliente: `cor` (#rrggbb com contraste 4,5:1 contra o texto branco do botão; vazio limpa) e `rotulos` (objeto {chave: texto} "
+    "com as chaves editáveis de nichos.json, sem HTML, até 80 caracteres; vazio limpa). Substitui a personalização anterior.",
+    "POST", "/dev/clinicas/{clinica}/personalizar", [P("clinica", "string", "slug do cliente", True), P("cor", "string", "cor de destaque #rrggbb"),
+                                                     P("rotulos", "object", "rótulos a trocar, ex.: {\"agendar\": \"Marcar horário\"}")], nivel="dev", por="dev")
+def _dev_personalizar(bd, dev, a):
+    return {"personalizar": dv.personalizar(bd, dev, a["clinica"], a.get("cor"), a.get("rotulos"))}
+
+
+@op("dev_clinica_apagar", "Apaga um cliente e todos os dados dele (agenda, pacientes, chaves). NÃO tem volta: exporte antes com exportar_clinica. "
+    "Confirme com `confirmar` igual ao slug.", "DELETE", "/dev/clinicas/{clinica}",
+    [P("clinica", "string", "slug do cliente", True), P("confirmar", "string", "repita o slug para confirmar", True)], nivel="dev", por="dev")
+def _dev_apagar(bd, dev, a):
+    dv.apagar_clinica(bd, dev, a["clinica"], a["confirmar"])
+    return {"ok": True}
 
 
 @op("listar_bloqueios", "Bloqueios de agenda (folgas, férias, reuniões) de hoje em diante.", "GET", "/bloqueios",
@@ -280,14 +332,15 @@ def _wa_lista(bd, c, a):
 
 def _json_schema(params: list[dict]) -> dict:
     tipos = {"integer": {"type": "integer"}, "string": {"type": "string"}, "boolean": {"type": "boolean"},
-             "array": {"type": "array", "items": {"type": "object"}}}
+             "array": {"type": "array", "items": {"type": "object"}}, "object": {"type": "object"}}
     return {"type": "object", "properties": {p["nome"]: {**tipos[p["tipo"]], "description": p["desc"]} for p in params},
             "required": [p["nome"] for p in params if p["obrig"]]}
 
 
 def ferramentas_mcp(auth: tuple | None) -> list[dict]:
     nivel = NIVEL[auth[1] if auth else "publico"]
-    return [{"name": o["nome"], "description": o["desc"], "inputSchema": _json_schema(o["params"]),
+    com_clinica = [P("clinica", "string", "endereço (slug) do cliente: obrigatório com chave de dev")] if auth and auth[1] == "dev" else []
+    return [{"name": o["nome"], "description": o["desc"], "inputSchema": _json_schema(o["params"] + (com_clinica if o["por"] == "chave" else [])),
              "annotations": {"readOnlyHint": o["metodo"] == "GET", "destructiveHint": o["metodo"] == "DELETE"}}
             for o in OPS.values() if NIVEL[o["nivel"]] <= nivel]
 
@@ -316,6 +369,8 @@ def openapi(servidor: str) -> dict:
                             "schema": _json_schema([p])["properties"][p["nome"]]} for p in resto]
         item: dict = {"operationId": o["nome"], "summary": o["desc"], "parameters": parametros,
                       "responses": {str(o["ok"]): {"description": "ok"}, "4XX": {"description": "erro: {erro:{codigo,mensagem}}"}}}
+        if o["por"] == "chave":
+            parametros.append({"name": "clinica", "in": "query", "required": False, "description": "slug do cliente: só com chave de dev (ad_...)", "schema": {"type": "string"}})
         if corpo and resto:
             item["requestBody"] = {"required": True, "content": {"application/json": {"schema": _json_schema(resto)}}}
         if o["nivel"] != "publico":

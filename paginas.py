@@ -81,7 +81,7 @@ body.vidro header.topo{background:rgba(3,20,22,.6);border:0;position:sticky;top:
 
 
 def pagina(titulo: str, corpo: str, *, desc: str = "", canonical: str = "", indexar: bool = True, nav: str = "", marca: str = "agenda-clinica",
-           home: str = "/", extra_head: str = "", fundo: str = "", modo: str = "limpo", heroi: str = "") -> str:
+           home: str = "/", extra_head: str = "", fundo: str = "", modo: str = "limpo", heroi: str = "", tema: str = "") -> str:
     """`modo`: "limpo" (painel, trabalho), "vidro" (página de tarefa sobre a foto desfocada) ou "heroi" (foto cheia + herói)."""
     meta = f'<meta name="description" content="{e(desc)}">' if desc else ""
     meta += f'<link rel="canonical" href="{e(canonical)}">' if canonical else ""
@@ -99,6 +99,8 @@ def pagina(titulo: str, corpo: str, *, desc: str = "", canonical: str = "", inde
         camada = f'<div class="fundo" style="background-color:{e(cor)}"></div>'
     cr = CREDITOS.get(foto)
     credito = (f'Foto: <a href="/creditos">{e(cr["fotografo"])}</a> · {e(cr["fonte"])}') if foto and cr else ""
+    # Cor do cliente só no tema claro: no escuro o contraste do tom padrão já foi medido; o dev personaliza o que a clínica vê de dia.
+    estilo_tema = f"<style>@media(prefers-color-scheme:light){{:root{{--c:{e(tema)};--c2:{e(tema)}}}}}</style>" if tema else ""
     cab = (f'<header class="topo"><div><b><a href="{e(home)}" style="color:inherit">{e(marca)}</a></b>{nav}</div></header>')
     if foto and modo == "heroi":
         miolo, classe = f'{cab}<section class="heroi">{heroi}<div class="credito">{credito}</div></section><main class="folha">{corpo}</main>', "imersivo"
@@ -107,7 +109,7 @@ def pagina(titulo: str, corpo: str, *, desc: str = "", canonical: str = "", inde
     else:
         miolo, classe = f'{cab}<main>{corpo}</main>', ""
     return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>{e(titulo)}</title>{meta}{extra_head}<style>{CSS}</style></head><body class="{classe}">{camada}{miolo}</body></html>')
+            f'<title>{e(titulo)}</title>{meta}{extra_head}<style>{CSS}</style>{estilo_tema}</head><body class="{classe}">{camada}{miolo}</body></html>')
 
 
 def brl(centavos) -> str:
@@ -153,7 +155,7 @@ def privacidade() -> str:
 junto da data, do horário, do serviço e do profissional. <b>Não guardamos dado clínico</b> (sintomas, exames, prontuário): não escreva isso nos campos.</p>
 <p>Esses dados são visíveis para a clínica em que você agendou e para quem tiver o código da sua consulta. Não são vendidos nem usados para
 publicidade. Para corrigir ou apagar seus dados, peça à clínica; quem opera o serviço atende a clínica pelo e-mail dela.</p>
-<p>A clínica é a controladora dos dados dos próprios pacientes (LGPD, art. 5º, VI); este software é a ferramenta. O código é aberto e pode ser auditado.</p>
+<p>A clínica é a controladora dos dados dos próprios pacientes (LGPD, art. 5º, VI); este software é a ferramenta. Se o cadastro da clínica foi feito por uma <b>conta de dev</b> (agência ou integrador que presta o suporte), esse dev também vê o nome e o telefone de quem agendou naquela clínica, só para dar o suporte. O código é aberto e pode ser auditado.</p>
 <p>Por padrão este sistema <b>não envia mensagens</b>. Se a clínica ligar o lembrete por WhatsApp, você recebe no máximo <b>uma confirmação e um lembrete</b> da sua consulta, no número que informou, com um link para não receber mais. Cancelamentos e remarcações feitos pela clínica continuam sendo avisados por ela.</p>""", nav='<a href="/">Início</a>', fundo="clinica-clara", modo="vidro")
 
 
@@ -180,7 +182,7 @@ def site_clinica(info: dict, base: str) -> str:
                     f"<td><a href='/c/{e(c['slug'])}/agendar?servico={s['id']}'>Agendar</a></td></tr>" for s in info["servicos"])
     locs = "".join(f"<div class='cartao'><b>{e(l['nome'])}</b><div class='mudo'>{e(l['endereco'])} {e(l['cidade'])}</div></div>" for l in info["locais"])
     V = nx.vocab(c)
-    return pagina(f"{c['nome']} — agende online", f"""<h2 style="margin-top:.2em">{V["profs"]}</h2><div class="grade">{profs or "<p class='mudo'>Em breve.</p>"}</div>
+    return pagina(f"{c['nome']} — agende online", f"""<h2 style="margin-top:.2em">{e(V["profs"])}</h2><div class="grade">{profs or "<p class='mudo'>Em breve.</p>"}</div>
 <h2>Serviços</h2><div class="cartao"><table><tr><th>Serviço</th><th>Duração</th><th>Valor</th><th></th></tr>{servs}</table></div>
 <h2>Onde atendemos</h2><div class="grade">{locs}</div>
 <footer>Agendamento por <a href="/">agenda-clinica</a>, software livre.</footer>""",
@@ -188,7 +190,7 @@ def site_clinica(info: dict, base: str) -> str:
         canonical=f"{base}/c/{c['slug']}" if c.get("indexavel") else "", indexar=bool(c.get("indexavel")),
         marca=c["nome"], home=f"/c/{c['slug']}",
         extra_head=f'<script type="application/ld+json">{ld}</script>',
-        nav=f'<a href="/c/{e(c["slug"])}/agendar">Agendar</a>', fundo=fundo_de(c["slug"], c), modo="heroi",
+        nav=f'<a href="/c/{e(c["slug"])}/agendar">Agendar</a>', tema=nx.tema(c), fundo=fundo_de(c["slug"], c), modo="heroi",
         heroi=(f'<span class="kicker">{e(c["cidade"]) if c["cidade"] else "Agende online"}</span><h1>{e(c["nome"])}</h1><p>{e(c["descricao"])}</p>'
                f'<div class="acoes"><a class="btn grande" href="/c/{e(c["slug"])}/agendar">{e(nx.vocab(c)["agendar"])}</a>' + (f'<a class="btn grande sec" href="https://wa.me/{e(_so_digitos(c["telefone"]))}">WhatsApp</a>' if _so_digitos(c["telefone"]) else "") + '</div>'))
 
@@ -212,7 +214,7 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
         return pagina(f"Agendar — {c['nome']}", f"<h1>Qual serviço?</h1>{_erro(erro)}<div class='grade'>{itens or '<p>' + e(V['sem_servicos']) + '</p>'}</div>",
                       # A /agendar BASE é indexável (decisão do dono: "indexa tudo"); com parâmetro (serviço, horário) ou erro
                       # é combinação infinita de URLs sem conteúdo próprio, e a página do paciente (/m/) é dado pessoal: noindex.
-                      indexar=not q and not erro, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug, c), modo="vidro")
+                      indexar=not q and not erro, marca=c["nome"], home=f"/c/{slug}", nav=nav, tema=nx.tema(c), fundo=fundo_de(slug, c), modo="vidro")
     if q.get("hora") and q.get("data") and q.get("profissional"):
         p = profs.get(int(q["profissional"])) if q["profissional"].isascii() and q["profissional"].isdigit() else None
         loc = next((h for h in horarios if h["data"] == q["data"] and h["hora"] == q["hora"] and str(h["profissional_id"]) == q["profissional"]), None)
@@ -228,7 +230,7 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
 <label>E-mail (opcional)<input name="email" type="email" autocomplete="email"></label>
 <p><label style="font-weight:400"><input type="checkbox" name="consentimento" value="1" required> {e(V["autorizo"])}
 (<a href="/privacidade">privacidade</a>).{e(V["saude"])}</label></p>
-<button>Confirmar</button></form>""", indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug, c), modo="vidro")
+<button>Confirmar</button></form>""", indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, tema=nx.tema(c), fundo=fundo_de(slug, c), modo="vidro")
     filtro = q.get("profissional", "")
     links = f"<a class='pill' href='{base}?servico={serv['id']}'>{e(V['qualquer'])}</a> " + " ".join(
         f"<a class='pill' href='{base}?servico={serv['id']}&amp;profissional={p['id']}'>{e(p['nome'])}</a>" for p in info["profissionais"])
@@ -243,7 +245,7 @@ def agendar(info: dict, horarios: list[dict], q: dict, erro: str = "") -> str:
                   + "".join(f"<a href='{base}?{e(qs(hr))}'>{e(hr)}</a>" for hr in horas) + "</div></div>")
     return pagina(f"Horários — {c['nome']}", f"""<h1>{e(serv['nome'])}</h1><p class="mudo">Próximos 14 dias · {serv['duracao_min']} min</p>
 <p>{links}</p>{_erro(erro)}{corpo or "<p class='aviso'>Sem horários livres nos próximos 14 dias para essa escolha. Tente {e(V['outro'])} ou fale com {e(c['nome'])}.</p>"}""",
-                  indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, fundo=fundo_de(slug, c), modo="vidro")
+                  indexar=False, marca=c["nome"], home=f"/c/{slug}", nav=nav, tema=nx.tema(c), fundo=fundo_de(slug, c), modo="vidro")
 
 
 def agendado(info: dict, ag: dict, base: str) -> str:
@@ -252,18 +254,18 @@ def agendado(info: dict, ag: dict, base: str) -> str:
     return pagina(f"Agendado — {c['nome']}", f"""<h1 class="ok">Agendado!</h1>
 <div class="cartao"><b>{e(ag['servico'])}</b> com <b>{e(ag['profissional'])}</b><br>{e(data_br(ag['data']))} às {e(ag['hora'])}<br>{e(ag['local'])} · {e(ag['endereco'])}</div>
 <div class="aviso"><b>Guarde este link</b> para consultar, cancelar ou remarcar:<br><a href="/m/{e(ag['codigo'])}">{e(base)}/m/{e(ag['codigo'])}</a><br>
-<span class="mudo">Código: <code>{e(ag['codigo'])}</code>. {"Você receberá um lembrete por WhatsApp; guarde o código também." if c.get("lembrete_whatsapp") else nx.vocab(c)["sem_msg"]}</span></div>{wa}""",
-                  indexar=False, marca=c["nome"], home=f"/c/{c['slug']}", fundo=fundo_de(c["slug"], c), modo="vidro")
+<span class="mudo">Código: <code>{e(ag['codigo'])}</code>. {"Você receberá um lembrete por WhatsApp; guarde o código também." if c.get("lembrete_whatsapp") else e(nx.vocab(c)["sem_msg"])}</span></div>{wa}""",
+                  indexar=False, marca=c["nome"], home=f"/c/{c['slug']}", tema=nx.tema(c), fundo=fundo_de(c["slug"], c), modo="vidro")
 
 
 def consulta(ag: dict, clinica: dict, erro: str = "") -> str:
     ativo = ag["status"] == "confirmado"
-    return pagina(f"{nx.vocab(clinica)['sua']} — {clinica['nome']}", f"""<h1>{nx.vocab(clinica)['sua']}</h1>{_erro(erro)}
+    return pagina(f"{nx.vocab(clinica)['sua']} — {clinica['nome']}", f"""<h1>{e(nx.vocab(clinica)['sua'])}</h1>{_erro(erro)}
 <div class="cartao"><b>{e(ag['servico'])}</b> com <b>{e(ag['profissional'])}</b><br>{e(data_br(ag['data']))} às {e(ag['hora'])}<br>{e(ag['local'])} · {e(ag['endereco'])}<br>
 <span class="pill">{'confirmada' if ativo else 'cancelada'}</span></div>
 {f'''<div class="linha"><a class="btn sec fixo" href="/m/{e(ag['codigo'])}/remarcar">Remarcar</a>
-<form method="post" action="/m/{e(ag['codigo'])}/cancelar" class="in"><button class="perigo">{nx.vocab(clinica)["cancelar"]}</button></form></div>''' if ativo else ''}""",
-                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
+<form method="post" action="/m/{e(ag['codigo'])}/cancelar" class="in"><button class="perigo">{e(nx.vocab(clinica)["cancelar"])}</button></form></div>''' if ativo else ''}""",
+                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", tema=nx.tema(clinica), fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
 
 
 def remarcar_paciente(ag: dict, clinica: dict, horarios: list[dict], profs: dict, erro: str = "") -> str:
@@ -273,7 +275,7 @@ def remarcar_paciente(ag: dict, clinica: dict, horarios: list[dict], profs: dict
                   f"<input type='hidden' name='hora' value='{e(h['hora'])}'><input type='hidden' name='profissional' value='{h['profissional_id']}'>"
                   f"<button class='sec' style='margin:3px'>{e(data_br(h['data']))} {e(h['hora'])} · {e(profs.get(h['profissional_id'], ''))}</button></form>")
     return pagina(f"Remarcar — {clinica['nome']}", f"<h1>Remarcar</h1>{_erro(erro)}<p class='mudo'>Escolha o novo horário:</p>{corpo or '<p class=aviso>Sem horários livres nos próximos 14 dias.</p>'}",
-                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
+                  indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}", tema=nx.tema(clinica), fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
 
 
 # ------------------------------------------------------------------ painel
@@ -427,12 +429,12 @@ gera sozinho {'uma confirmação e ' if est['confirmacao'] else ''}um lembrete; 
 
 def sem_lembrete(ag: dict, clinica: dict, feito: bool) -> str:
     V = nx.vocab(clinica)
-    corpo = (f"<h1 class='ok'>Pronto</h1><p>Você não receberá mais lembretes de {e(clinica['nome'])} neste telefone. {V['sua']} continua marcada.</p>" if feito else
-             f"<h1>Não quer receber lembretes?</h1><p>Vale para este telefone em {e(clinica['nome'])}. {V['sua']} de {e(ag['servico'])}, {e(data_br(ag['data']))} às {e(ag['hora'])}, continua marcada.</p>"
+    corpo = (f"<h1 class='ok'>Pronto</h1><p>Você não receberá mais lembretes de {e(clinica['nome'])} neste telefone. {e(V['sua'])} continua marcada.</p>" if feito else
+             f"<h1>Não quer receber lembretes?</h1><p>Vale para este telefone em {e(clinica['nome'])}. {e(V['sua'])} de {e(ag['servico'])}, {e(data_br(ag['data']))} às {e(ag['hora'])}, continua marcada.</p>"
              f"<form method='post' action='/m/{e(ag['codigo'])}/sem-lembrete'><button>Parar de receber</button></form>"
-             f"<p class='mudo'>Não foi você que agendou? <a href='/m/{e(ag['codigo'])}'>Cancele {V['a_consulta']} aqui</a>.</p>")
+             f"<p class='mudo'>Não foi você que agendou? <a href='/m/{e(ag['codigo'])}'>Cancele {e(V['a_consulta'])} aqui</a>.</p>")
     return pagina(f"Lembretes — {clinica['nome']}", corpo, indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}",
-                  fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
+                  tema=nx.tema(clinica), fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
 
 
 # ------------------------------------------------------------------ para quem desenvolve
@@ -453,8 +455,66 @@ curl -H 'Authorization: Bearer ac_...' \\
 # no seu servidor:
 AGENDA_EMAIL=voce@x.com AGENDA_SENHA=... \\
   python3 app.py importar clinica.json</pre><p class="mudo">O arquivo não leva senha, chaves nem sessões: você define o login novo na importação. Com pacientes, os links <code>/m/código</code> continuam valendo. Importar não liga o WhatsApp: cada servidor usa o seu Evolution. Se algo no arquivo falhar, nada é importado.</p></div>
-<div class="cartao"><b>4 · Gerenciar por API ou MCP</b><p class="mudo">Cada clínica tem chaves de API (escopo leitura ou escrita) no painel. Aponte o seu agente para <code>{e(base)}/mcp</code> (ou para o seu servidor: é o mesmo contrato). <a href="/docs">Guia e operações</a> · <a href="/openapi.json">OpenAPI</a> · <a href="/llms.txt">llms.txt</a>.</p></div>
+<div class="cartao"><b>4 · Conta de dev: vários clientes, uma chave</b><p class="mudo"><a href="/dev/cadastro">Crie uma conta de dev</a> (e-mail; grátis e aberto), cadastre os seus clientes, monte a agenda de cada um, entregue o login a eles e dê o suporte (você vê nome e telefone dos pacientes dos seus clientes). A chave de dev (<code>ad_...</code>) age em cada cliente seu por API e MCP: passe <code>clinica=&lt;endereço&gt;</code>.</p></div>
+<div class="cartao"><b>5 · Gerenciar por API ou MCP</b><p class="mudo">Cada clínica tem chaves de API (escopo leitura ou escrita) no painel. Aponte o seu agente para <code>{e(base)}/mcp</code> (ou para o seu servidor: é o mesmo contrato). <a href="/docs">Guia e operações</a> · <a href="/openapi.json">OpenAPI</a> · <a href="/llms.txt">llms.txt</a>.</p></div>
 </div>
 <div class="aviso"><b>Dado de paciente é da clínica</b> (LGPD): quem hospeda é operador, não dono. Ao migrar, apague do servidor antigo o que não precisa mais: <code>python3 app.py apagar &lt;slug&gt; --confirmo</code> (não tem volta; exporte antes).</div>""",
                   desc="Código aberto (MIT), como rodar no seu servidor, exportar e importar uma clínica e gerenciar por API ou MCP.", canonical=f"{base}/devs" if base else "",
                   nav='<a href="/">Início</a><a href="/docs">Para agentes</a>', fundo="minimalista", modo="vidro")
+
+
+# ------------------------------------------------------------------ conta de dev
+
+def dev_conta(modo: str, erro: str = "", oauth: list[tuple[str, str]] | None = None) -> str:
+    """`modo`: "cadastro" ou "entrar". `oauth`: [(rótulo, endereço)] dos provedores configurados neste servidor (Google, GitHub)."""
+    cad = modo == "cadastro"
+    botoes = "".join(f"<a class='btn sec' style='display:block;margin:8px 0;text-align:center' href='{e(h)}'>{e(r)}</a>" for r, h in (oauth or []))
+    campos = ('<label>Nome<input name="nome" maxlength="80" autocomplete="name"></label>' if cad else "") + (
+        '<label>E-mail<input name="email" type="email" required autocomplete="email"></label>'
+        f'<label>Senha{" (mínimo 10 caracteres)" if cad else ""}<input name="senha" type="password" required minlength="{10 if cad else 1}" autocomplete="{"new-password" if cad else "current-password"}"></label>')
+    return pagina("Conta de dev — " + ("criar" if cad else "entrar"), f"""<h1>{'Criar conta de dev' if cad else 'Entrar como dev'}</h1>{_erro(erro)}
+<p class="mudo">Uma conta, vários clientes (clínicas e outros negócios com hora marcada). Você cria, personaliza e dá o suporte; eles agendam. Grátis e de código aberto.</p>
+{botoes}<form method="post" action="/dev/{'cadastro' if cad else 'entrar'}" class="cartao">{campos}<button>{'Criar conta' if cad else 'Entrar'}</button></form>
+<p class="mudo">{'Já tem conta? <a href="/dev/entrar">Entrar</a>' if cad else 'Ainda não tem? <a href="/dev/cadastro">Criar conta de dev</a>'} · <a href="/devs">Como funciona</a></p>""",
+                  indexar=False, nav='<a href="/devs">Para devs</a>', fundo="minimalista", modo="vidro")
+
+
+def dev_painel(dev, tok: str, clientes: list[dict], chaves: list[dict], base: str, nova: dict | None = None, msg: str = "", erro: str = "") -> str:
+    def form(acao: str, corpo: str, botao: str, classe: str = "sec") -> str:
+        return (f"<form method='post' action='/dev/acao' class='in'>{_csrf(tok)}<input type='hidden' name='acao' value='{acao}'>{corpo}"
+                f"<button class='{classe}' style='padding:4px 10px'>{botao}</button></form>")
+    linhas = ""
+    for c in clientes:
+        s = e(c["slug"])
+        oculto = f"<input type='hidden' name='slug' value='{s}'>"
+        linhas += (f"<tr><td><b>{e(c['nome'])}</b><div class='mudo'>{e(c['nicho'])} · {e(c['cidade'])} · <a href='/c/{s}'>/c/{s}</a></div></td><td>{c['agendamentos_futuros']}</td>"
+                   f"<td>{form('suporte', oculto, 'Entrar como suporte')}"
+                   f"<a href='/dev/exportar/{s}'>exportar</a> · <a href='/dev/exportar/{s}?com_pacientes=1'>com pacientes</a>"
+                   f"<details><summary>Acesso do cliente</summary>{form('acesso', oculto + '<input name=email type=email placeholder=e-mail required><input name=senha type=password minlength=10 placeholder=senha required>', 'Definir')}</details>"
+                   f"<details><summary>Personalizar</summary>{form('personalizar', oculto + '<input name=cor type=color value=' + e(nx.personalizacao(c).get('cor') or '#0f766e') + '><input name=agendar placeholder=\"texto do botão de agendar\" value=\"' + e(nx.personalizacao(c).get('rotulos', {}).get('agendar', '')) + '\"><input name=profs placeholder=\"nome da equipe (ex.: Barbeiros)\" value=\"' + e(nx.personalizacao(c).get('rotulos', {}).get('profs', '')) + '\">', 'Salvar')}</details>"
+                   f"<details><summary>Apagar</summary>{form('apagar', oculto + '<input name=confirmar placeholder=\"digite ' + s + '\" required>', 'Apagar para sempre', 'perigo')}</details></td></tr>")
+    caixa = (f"<div class='aviso'><b>Chave criada (aparece só agora):</b><br><code style='word-break:break-all'>{e(nova['chave'])}</code></div>" if nova else "")
+    chv = "".join(f"<tr><td>{e(k['nome'])}</td><td><code>ad_{e(k['prefixo'])}…</code></td><td>{e(k['ultimo_uso'] or 'nunca usada')}</td><td>{form('revogar_chave', f'<input type=hidden name=id value={k['id']}>', 'Revogar', 'perigo')}</td></tr>" for k in chaves)
+    cfg = json.dumps({"mcpServers": {"agenda-clinica": {"type": "http", "url": f"{base}/mcp", "headers": {"Authorization": "Bearer ad_SUA_CHAVE"}}}}, indent=2)
+    return pagina("Meus clientes — conta de dev", f"""<h1>Meus clientes</h1>{_erro(erro)}{'<p class="ok">' + e(msg) + '</p>' if msg else ''}{caixa}
+<p class="mudo">{e(dev['email'])} · você vê nome e telefone dos pacientes dos seus clientes: é você quem dá o suporte.</p>
+<div class="cartao">{f'<table><tr><th>Cliente</th><th>Agend. futuros</th><th></th></tr>{linhas}</table>' if linhas else "<p class='mudo'>Nenhum cliente ainda. Crie o primeiro abaixo.</p>"}</div>
+<h2>Novo cliente</h2>
+<form method="post" action="/dev/acao" class="cartao">{_csrf(tok)}<input type="hidden" name="acao" value="criar_clinica">
+<div class="linha"><label>Nome<input name="nome" required maxlength="100"></label><label>Tipo<select name="nicho">{''.join(f'<option value="{e(k)}">{e(k)}</option>' for k in nx.NICHOS)}</select></label>
+<label>Endereço (opcional)<input name="slug" placeholder="meu-cliente" maxlength="40"></label><label>Cidade<input name="cidade" maxlength="80"></label></div><button>Criar cliente</button></form>
+<h2>Chaves de API e MCP</h2><div class="cartao">{f'<table><tr><th>Nome</th><th>Chave</th><th>Último uso</th><th></th></tr>{chv}</table>' if chv else "<p class='mudo'>Nenhuma chave ainda.</p>"}</div>
+<form method="post" action="/dev/acao" class="cartao">{_csrf(tok)}<input type="hidden" name="acao" value="criar_chave"><div class="linha"><label>Nome<input name="nome" placeholder="meu agente" required></label></div><button>Criar chave de dev</button></form>
+<p class="mudo">A chave de dev age em qualquer cliente seu: passe <code>clinica=&lt;endereço&gt;</code>. Conectar um agente (MCP):</p><pre>{e(cfg)}</pre>
+<form method="post" action="/dev/sair" class="in">{_csrf(tok)}<button class="sec">Sair</button></form>""",
+                  indexar=False, marca="Conta de dev", home="/dev", nav='<a href="/devs">Para devs</a><a href="/docs">Para agentes</a>')
+
+
+def protocolo(base: str) -> str:
+    return pagina("Protocolo aberto — agenda-clinica", f"""<h1>Protocolo aberto</h1>
+<p>O contrato do agenda-clinica é <b>aberto (MIT)</b>: qualquer servidor que fale isto é compatível com os agentes, as chaves e os arquivos de quem usa o nosso, e dá para sair de um servidor para outro sem pedir licença.</p>
+<div class="grade"><div class="cartao"><b>API e MCP</b><p class="mudo"><a href="/openapi.json">/openapi.json</a> descreve cada operação; o MCP fica em <code>{e(base)}/mcp</code>. REST e MCP são a mesma tabela.</p></div>
+<div class="cartao"><b>Arquivo de intercâmbio</b><p class="mudo"><code>agenda-clinica/1</code>: <a href="/schema/agenda-clinica-1.json">esquema JSON</a>. Exportar e importar uma clínica inteira, com pacientes só se pedido.</p></div>
+<div class="cartao"><b>Texto completo</b><p class="mudo"><a href="/protocolo.md">PROTOCOLO.md</a>: escopos, erros, compatibilidade e o que cada servidor precisa fazer. <a href="/devs">Para devs</a>.</p></div></div>""",
+                  desc="Contrato aberto do agenda-clinica: API REST, MCP e o arquivo de intercâmbio para migrar entre servidores.", canonical=f"{base}/protocolo" if base else "",
+                  nav='<a href="/devs">Para devs</a><a href="/docs">Para agentes</a>', fundo="minimalista", modo="vidro")

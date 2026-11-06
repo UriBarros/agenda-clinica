@@ -7,6 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080 DATA_DIR=/data
 WORKDIR /app
 COPY *.py nichos.json ./
 COPY static ./static
+COPY schema ./schema
+COPY PROTOCOLO.md ./
 RUN mkdir /data && chown 10001 /data
 USER 10001
 VOLUME /data

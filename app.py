@@ -13,6 +13,7 @@ Rotas: ver ops.py (REST e MCP saem da mesma tabela) e paginas.py (site e painel)
 """
 from __future__ import annotations
 
+import hmac
 import ipaddress
 import datetime as dt
 import json
@@ -25,7 +26,9 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import devs as dv
 import lembretes as lem
+import oauth as oa
 import migracao as mig
 import nichos as nx
 import nucleo as n
@@ -34,6 +37,7 @@ import paginas as pg
 
 VERSAO = "1.0.0"
 DEMOS = "(" + ",".join(repr(v["home"]["demo_slug"]) for v in nx.NICHOS.values()) + ")"  # slugs vindos do nichos.json (constante nossa, nunca de usuário)
+AQUI = Path(__file__).resolve().parent
 REPO_URL = os.environ.get("REPO_URL", "https://github.com/thiagopatzdorf/agenda-clinica")
 MAX_CORPO = 64 * 1024
 MCP_VERSOES = ("2025-06-18", "2025-03-26", "2024-11-05")
@@ -47,7 +51,7 @@ INSTRUCOES_MCP = ("Agendamento de consultas. Fluxo: clinica_info -> horarios_liv
 Limitador = n.Limitador
 
 
-LIMITES_TAXA = {"criar": (5, 3600), "login": (10, 300), "agendar": (20, 3600), "api": (240, 60),
+LIMITES_TAXA = {"dev_cadastro": (5, 3600), "criar": (5, 3600), "login": (10, 300), "agendar": (20, 3600), "api": (240, 60),
                 # Por conta (e-mail), além do IP: força bruta distribuída por vários IPs não adivinha uma senha.
                 "login_conta": (15, 3600)}
 MAX_LOTE_MCP = 10
@@ -144,6 +148,10 @@ def _ip(h) -> str:
     return ip_do_cliente(h.client_address[0], h.headers.get("CF-Connecting-IP", ""))
 
 
+def _botoes_oauth() -> list[tuple[str, str]]:
+    return [(f"Continuar com {oa.PROVEDORES[p]['rotulo']}", f"/entrar/{p}") for p in oa.disponiveis()]
+
+
 def _quinzena(bd, c, servico_id: int, prof: int | None = None) -> list[dict]:
     hoje = n.agora_local(c["tz"])[0]
     return n.horarios_livres(bd, c, servico_id, prof, hoje.isoformat(), (hoje + dt.timedelta(days=13)).isoformat(), limite=400)
@@ -152,7 +160,8 @@ def _quinzena(bd, c, servico_id: int, prof: int | None = None) -> list[dict]:
 def _auth_chave(app: App, h) -> tuple | None:
     cab = h.headers.get("Authorization", "")
     if cab.lower().startswith("bearer "):
-        a = n.autenticar_chave(app.bd, cab[7:].strip())
+        tok = cab[7:].strip()
+        a = dv.autenticar(app.bd, tok) if tok.startswith("ad_") else n.autenticar_chave(app.bd, tok)
         if not a:
             raise n.Erro(401, "chave_invalida", "chave de API inválida ou revogada")
         return a
@@ -347,13 +356,18 @@ def fazer_handler(app: App):
                 return self._enviar(200, f"User-agent: *\nAllow: /\nDisallow: /painel\nDisallow: /api/\nDisallow: /m/\nSitemap: {base}/sitemap.xml\n", "text/plain")
             if caminho == "/sitemap.xml":
                 slugs = [r["slug"] for r in app.bd.ler("select slug from clinicas where listada=1 order by id limit 5000")]
-                urls = ["", "/docs", "/devs", "/privacidade", "/creditos"] + [f"/{k}" for k in nx.NICHOS if k != nx.PADRAO] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
+                urls = ["", "/docs", "/devs", "/protocolo", "/dev/cadastro", "/privacidade", "/creditos"] + [f"/{k}" for k in nx.NICHOS if k != nx.PADRAO] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
                 return self._enviar(200, '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
                                     + "".join(f"<url><loc>{pg.e(base + u)}</loc></url>" for u in urls) + "</urlset>", "application/xml")
             if caminho == "/openapi.json" and metodo == "GET":
                 return self._json(200, ops.openapi(base))
             if caminho == "/llms.txt":
                 return self._enviar(200, ops.llms_txt(base), "text/plain; charset=utf-8")
+            if caminho in ("/protocolo.md", "/schema/agenda-clinica-1.json"):  # o contrato aberto, servido como está no repositório
+                arq, tipo = (AQUI / "PROTOCOLO.md", "text/markdown; charset=utf-8") if caminho.endswith(".md") else (AQUI / "schema" / "agenda-clinica-1.schema.json", "application/schema+json")
+                return self._enviar(200, arq.read_bytes(), tipo, extra={"Cache-Control": "public, max-age=3600"})
+            if caminho == "/protocolo":
+                return self._enviar(200, pg.protocolo(base))
             if caminho == "/devs":
                 return self._enviar(200, pg.devs(REPO_URL, base))
             if caminho == "/docs":
@@ -397,6 +411,10 @@ def fazer_handler(app: App):
                 if tok:
                     n.sair(app.bd, tok)
                 return self._ir("/", {"Set-Cookie": "sessao=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"})
+            if caminho.startswith("/entrar/"):
+                return self._oauth(caminho, q, base)
+            if caminho == "/dev" or caminho.startswith("/dev/"):
+                return self._dev(metodo, caminho, q, base)
             if caminho.startswith("/painel"):
                 return self._painel(metodo, caminho, q, base)
             partes = caminho.strip("/").split("/")
@@ -405,6 +423,118 @@ def fazer_handler(app: App):
             if partes[0] == "m" and len(partes) in (2, 3):
                 return self._paciente(metodo, partes, base)
             raise n.Erro(404, "nao_encontrado", "página não encontrada")
+
+        def _dev_ir(self, tok: str, destino: str = "/dev"):
+            seguro = "; Secure" if app.base(self).startswith("https") else ""
+            self._ir(destino, {"Set-Cookie": f"dev_sessao={tok}; Max-Age=1209600; Path=/dev; HttpOnly; SameSite=Lax{seguro}"})
+
+        def _oauth(self, caminho, q, base):
+            """Entrar com Google ou GitHub: /entrar/<provedor> manda para o provedor; /entrar/<provedor>/retorno recebe o código."""
+            partes = caminho.strip("/").split("/")
+            if len(partes) not in (2, 3) or (len(partes) == 3 and partes[2] != "retorno") or not oa.configurado(partes[1]):
+                raise n.Erro(404, "nao_encontrado", "página não encontrada")
+            prov, ck = partes[1], f"oauth_{partes[1]}"
+            seguro = "; Secure" if base.startswith("https") else ""
+            if not app.lim.passa("login", _ip(self), *LIMITES_TAXA["login"]):
+                raise n.Erro(429, "muitas_requisicoes", "muitas tentativas deste endereço; tente mais tarde")
+            if len(partes) == 2:
+                url, valor = oa.iniciar(prov, base)
+                return self._ir(url, {"Set-Cookie": f"{ck}={valor}; Max-Age=600; Path=/entrar; HttpOnly; SameSite=Lax{seguro}"})
+            try:
+                if q.get("error"):
+                    raise n.Erro(401, "recusado", "o login foi cancelado ou recusado no provedor")
+                estado, _, verif = _cookie(self, ck).partition(".")
+                if not estado or not hmac.compare_digest(estado, q.get("state", "")):
+                    raise n.Erro(400, "estado_invalido", "o login expirou ou não foi iniciado aqui; tente de novo")
+                ident = oa.identidade(prov, q.get("code", ""), base, verif)
+                d, _ = dv.por_provedor(app.bd, prov, ident, lambda: app.lim.passa("dev_novo_global", "*", n.LIMITES["devs_novos_por_dia"], 86400))
+                return self._dev_ir(dv.sessao_de(app.bd, d["id"]))
+            except n.Erro as e:
+                return self._enviar(e.status, pg.dev_conta("entrar", e.mensagem, _botoes_oauth()))
+
+        def _dev(self, metodo, caminho, q, base):
+            """Conta de dev: cadastro e login (e-mail; Google e GitHub entram em /entrar/<provedor>), painel dos clientes, exportação, suporte."""
+            nocache = {"Cache-Control": "no-store"}
+            if caminho in ("/dev/cadastro", "/dev/entrar"):
+                cad = caminho == "/dev/cadastro"
+                if metodo == "GET":
+                    return self._enviar(200, pg.dev_conta("cadastro" if cad else "entrar", oauth=_botoes_oauth()))
+                if not app.lim.passa("dev_cadastro" if cad else "login", _ip(self), *LIMITES_TAXA["dev_cadastro" if cad else "login"]):
+                    raise n.Erro(429, "muitas_requisicoes", "muitas tentativas deste endereço; tente mais tarde")
+                f = self._form()
+                try:
+                    if cad:
+                        if not app.lim.passa("dev_novo_global", "*", n.LIMITES["devs_novos_por_dia"], 86400):
+                            raise n.Erro(429, "cadastros_pausados", "o limite diário de contas novas foi atingido; tente amanhã")
+                        d = dv.criar(app.bd, f.get("email", ""), f.get("senha", ""), f.get("nome", ""))
+                        if not f.get("senha"):
+                            raise n.Erro(422, "senha_curta", "a senha precisa ter pelo menos 10 caracteres")
+                        return self._dev_ir(dv.sessao_de(app.bd, d["id"]))
+                    if not app.lim.passa("login_conta", "dev:" + f.get("email", "").strip().lower()[:120], *LIMITES_TAXA["login_conta"]):
+                        raise n.Erro(429, "muitas_requisicoes", "muitas tentativas para esta conta; aguarde")
+                    return self._dev_ir(dv.entrar(app.bd, f.get("email", ""), f.get("senha", "")))
+                except n.Erro as e:
+                    return self._enviar(e.status, pg.dev_conta("cadastro" if cad else "entrar", e.mensagem, _botoes_oauth()))
+            tok = _cookie(self, "dev_sessao")
+            dev = dv.dev_da_sessao(app.bd, tok)
+            if not dev:
+                return self._ir("/dev/entrar")
+            if metodo == "POST":
+                f = self._form()
+                if f.get("csrf") != n.csrf_de(tok):
+                    raise n.Erro(403, "csrf", "sessão expirada ou formulário inválido; recarregue a página")
+                if caminho == "/dev/sair":
+                    dv.sair(app.bd, tok)
+                    return self._ir("/", {"Set-Cookie": "dev_sessao=; Max-Age=0; Path=/dev; HttpOnly; SameSite=Lax"})
+                if caminho == "/dev/acao":
+                    return self._dev_acao(dev, tok, f, base)
+                raise n.Erro(404, "nao_encontrado", "página não encontrada")
+            if caminho.startswith("/dev/exportar/"):
+                c = dv.clinica_do_dev(app.bd, dev, caminho[len("/dev/exportar/"):])
+                dados = json.dumps(mig.exportar(app.bd, c, q.get("com_pacientes") == "1"), ensure_ascii=False, indent=1)
+                return self._enviar(200, dados, "application/json; charset=utf-8", extra={**nocache, "Content-Disposition": f'attachment; filename="{c["slug"]}-agenda.json"'})
+            if caminho == "/dev":
+                return self._enviar(200, pg.dev_painel(dev, tok, dv.clinicas(app.bd, dev), dv.listar_chaves(app.bd, dev["id"]), base, msg=q.get("msg", ""), erro=q.get("erro", "")), extra=nocache)
+            raise n.Erro(404, "nao_encontrado", "página não encontrada")
+
+        def _dev_acao(self, dev, tok: str, f: dict, base: str):
+            a = f.get("acao", "")
+            def volta(**kv):
+                return self._ir("/dev?" + urllib.parse.urlencode(kv))
+            try:
+                if a == "criar_clinica":
+                    if not ops.LIM_DEV.passa("clinica_criar", str(dev["id"]), 20, 3600):
+                        raise n.Erro(429, "muitas_requisicoes", "no máximo 20 clientes novos por hora")
+                    r = dv.criar_clinica(app.bd, dev, f.get("nome", ""), f.get("nicho", "clinica"), f.get("slug", ""), f.get("cidade", ""))
+                    return volta(msg=f"Cliente criado: /c/{r['slug']}. Use \"Entrar como suporte\" para montar equipe, serviços e horários.")
+                if a == "suporte":
+                    t = dv.sessao_suporte(app.bd, dev, f.get("slug", ""))
+                    seguro = "; Secure" if base.startswith("https") else ""
+                    return self._ir("/painel", {"Set-Cookie": f"sessao={t}; Max-Age=28800; Path=/; HttpOnly; SameSite=Lax{seguro}"})
+                if a == "acesso":
+                    dv.definir_acesso(app.bd, dev, f.get("slug", ""), f.get("email", ""), f.get("senha", ""))
+                    return volta(msg="Acesso do cliente definido: entregue o e-mail e a senha a ele.")
+                if a == "personalizar":
+                    atual = nx.personalizacao(dv.clinica_do_dev(app.bd, dev, f.get("slug", ""))).get("rotulos", {})
+                    for k in ("agendar", "profs"):  # o painel edita 2 rótulos; os outros que a API definiu ficam como estão
+                        if f.get(k, "").strip():
+                            atual[k] = f[k].strip()
+                        else:
+                            atual.pop(k, None)
+                    dv.personalizar(app.bd, dev, f.get("slug", ""), f.get("cor", ""), atual)
+                    return volta(msg="Personalização salva.")
+                if a == "apagar":
+                    dv.apagar_clinica(app.bd, dev, f.get("slug", ""), f.get("confirmar", ""))
+                    return volta(msg="Cliente apagado.")
+                if a == "criar_chave":
+                    nova = dv.criar_chave(app.bd, dev["id"], f.get("nome", ""))
+                    return self._enviar(201, pg.dev_painel(dev, tok, dv.clinicas(app.bd, dev), dv.listar_chaves(app.bd, dev["id"]), base, nova=nova), extra={"Cache-Control": "no-store"})
+                if a == "revogar_chave":
+                    dv.revogar_chave(app.bd, dev["id"], _i(f.get("id"), 0))
+                    return volta(msg="Chave revogada.")
+                raise n.Erro(400, "acao", "ação desconhecida")
+            except n.Erro as e:
+                return volta(erro=e.mensagem)
 
         def _entrar_e_ir(self, email: str, senha: str, destino: str):
             tok = n.entrar(app.bd, email, senha)
@@ -436,7 +566,7 @@ def fazer_handler(app: App):
 
         def _paciente(self, metodo, partes, base):
             r, c = n.agendamento_por_codigo(app.bd, partes[1])
-            clin = {"nome": c["nome"], "slug": c["slug"], "nicho": c["nicho"]}
+            clin = {"nome": c["nome"], "slug": c["slug"], "nicho": c["nicho"], "personalizar": c["personalizar"]}
             acao = partes[2] if len(partes) == 3 else ""
             ver = lambda erro="": self._enviar(200, pg.consulta(n._ag_dict(app.bd, r, False), clin, erro), extra={"Cache-Control": "no-store"})
             if not acao:

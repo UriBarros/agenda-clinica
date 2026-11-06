@@ -4,8 +4,10 @@ Nunca vão no arquivo: hash de senha, chaves de API, sessões, a instância do W
 Agendamentos (dado de paciente, LGPD) só vão com `com_pacientes=True`, e o código de cada um vai junto para os links `/m/<código>` continuarem valendo."""
 from __future__ import annotations
 
+import json
 import sqlite3
 
+import nichos as nx
 import nucleo as n
 
 FORMATO = "agenda-clinica/1"
@@ -27,6 +29,8 @@ def exportar(bd: n.Banco, c: sqlite3.Row, com_pacientes: bool = False) -> dict:
            "bloqueios": [{"profissional": b["profissional_id"], "inicio": b["inicio"], "fim": b["fim"], "motivo": b["motivo"]}
                          for b in bd.ler("select * from bloqueios where clinica_id=? order by id", (cid,))],
            "com_pacientes": bool(com_pacientes)}
+    if c["personalizar"]:
+        out["personalizar"] = nx.personalizacao(c)
     if com_pacientes:
         out["agendamentos"] = [{"profissional": a["profissional_id"], "local": a["local_id"], "servico": a["servico_id"], "paciente_nome": a["paciente_nome"],
                                 "paciente_tel": a["paciente_tel"], "paciente_email": a["paciente_email"], "data": a["data"], "inicio": n.hhmm(a["inicio"]),
@@ -71,6 +75,10 @@ def importar(bd: n.Banco, dados: dict, email: str, senha: str, slug: str = "") -
     try:
         n.salvar_clinica(bd, bd.um("select * from clinicas where id=?", (cid,)),
                          {k: cl[k] for k in ("descricao", "telefone", "email", "cidade", "tz", "passo_min", "antecedencia_min") if k in cl})
+        pers = nx.validar_personalizacao((dados.get("personalizar") or {}).get("cor"), (dados.get("personalizar") or {}).get("rotulos"))
+        if pers:
+            with bd.escrita() as con:
+                con.execute("update clinicas set personalizar=? where id=?", (json.dumps(pers, ensure_ascii=False), cid))
         L = {x["ref"]: n.salvar_local(bd, cid, {k: x[k] for k in ("nome", "endereco", "cidade", "ativo") if k in x}) for x in locais}
         S = {x["ref"]: n.salvar_servico(bd, cid, {k: x[k] for k in ("nome", "duracao_min", "preco_centavos", "ativo") if k in x}) for x in servs}
         P = {}
