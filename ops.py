@@ -13,6 +13,7 @@ import re
 from typing import Any, Callable
 
 import lembretes as lem
+import migracao as mig
 import nucleo as n
 
 NIVEL = {"publico": 0, "leitura": 1, "escrita": 2}
@@ -157,6 +158,13 @@ def _listar_ag(bd, c, a):
     [P("id", "integer", "id do agendamento", True)], nivel="leitura", por="chave")
 def _ver_ag(bd, c, a):
     return n._ag_dict(bd, n.agendamento_da_clinica(bd, c, a["id"]))
+
+
+@op("exportar_clinica", "Exporta a clínica inteira (dados, profissionais, serviços, agenda semanal, bloqueios) em JSON versionado, para migrar para outro servidor com "
+    "`python3 app.py importar`. Nunca inclui senha, chaves nem sessões. Com com_pacientes=true leva também os agendamentos, com nome e telefone dos pacientes.",
+    "GET", "/exportar", [P("com_pacientes", "boolean", "inclui os agendamentos (dado de paciente; padrão: não)")], nivel="leitura", por="chave")
+def _exportar(bd, c, a):
+    return mig.exportar(bd, c, bool(a.get("com_pacientes")))
 
 
 @op("listar_bloqueios", "Bloqueios de agenda (folgas, férias, reuniões) de hoje em diante.", "GET", "/bloqueios",

@@ -26,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import lembretes as lem
+import migracao as mig
 import nichos as nx
 import nucleo as n
 import ops
@@ -346,13 +347,15 @@ def fazer_handler(app: App):
                 return self._enviar(200, f"User-agent: *\nAllow: /\nDisallow: /painel\nDisallow: /api/\nDisallow: /m/\nSitemap: {base}/sitemap.xml\n", "text/plain")
             if caminho == "/sitemap.xml":
                 slugs = [r["slug"] for r in app.bd.ler("select slug from clinicas where listada=1 order by id limit 5000")]
-                urls = ["", "/docs", "/privacidade", "/creditos"] + [f"/{k}" for k in nx.NICHOS if k != nx.PADRAO] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
+                urls = ["", "/docs", "/devs", "/privacidade", "/creditos"] + [f"/{k}" for k in nx.NICHOS if k != nx.PADRAO] + [f"/c/{s}" for s in slugs] + [f"/c/{s}/agendar" for s in slugs]
                 return self._enviar(200, '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
                                     + "".join(f"<url><loc>{pg.e(base + u)}</loc></url>" for u in urls) + "</urlset>", "application/xml")
             if caminho == "/openapi.json" and metodo == "GET":
                 return self._json(200, ops.openapi(base))
             if caminho == "/llms.txt":
                 return self._enviar(200, ops.llms_txt(base), "text/plain; charset=utf-8")
+            if caminho == "/devs":
+                return self._enviar(200, pg.devs(REPO_URL, base))
             if caminho == "/docs":
                 return self._enviar(200, pg.docs(base))
             if caminho == "/privacidade":
@@ -483,6 +486,9 @@ def fazer_handler(app: App):
                 return self._enviar(200, pg.equipe(c, tok, info, q.get("msg", ""), q.get("erro", "")), extra=nocache)
             if caminho == "/painel/api":
                 return self._enviar(200, pg.painel_api(c, tok, n.listar_chaves(app.bd, c["id"]), base), extra=nocache)
+            if caminho == "/painel/exportar":  # só leitura: o download não muda nada e não é legível por outra origem
+                dados = json.dumps(mig.exportar(app.bd, c, q.get("com_pacientes") == "1"), ensure_ascii=False, indent=1)
+                return self._enviar(200, dados, "application/json; charset=utf-8", extra={**nocache, "Content-Disposition": f'attachment; filename="{c["slug"]}-agenda.json"'})
             if caminho == "/painel/whatsapp":
                 return self._enviar(200, pg.painel_whatsapp(c, tok, lem.estado(app.bd, c), q.get("msg", ""), q.get("erro", "")), extra=nocache)
             if caminho == "/painel/remarcar":
@@ -644,6 +650,16 @@ if __name__ == "__main__":
         print(f"{sys.argv[2]}: {'listada' if sys.argv[1] == 'listar' else 'fora da lista'}")
     elif sys.argv[1:2] == ["metricas"]:
         print(json.dumps(metricas(n.Banco(dados)), ensure_ascii=False, indent=2))
+    elif sys.argv[1:2] == ["exportar"] and len(sys.argv) in (3, 4):
+        print(json.dumps(mig.exportar(n.Banco(dados), n.clinica_por_slug(n.Banco(dados), sys.argv[2]), "--com-pacientes" in sys.argv[3:]), ensure_ascii=False, indent=1))
+    elif sys.argv[1:2] == ["importar"] and len(sys.argv) >= 3:
+        # E-mail e senha do login novo vêm do ambiente (AGENDA_EMAIL, AGENDA_SENHA): senha em argumento aparece na lista de processos.
+        res = mig.importar(n.Banco(dados), json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")), os.environ.get("AGENDA_EMAIL", ""), os.environ.get("AGENDA_SENHA", ""),
+                           os.environ.get("AGENDA_SLUG", ""))
+        print("importada:", json.dumps(res, ensure_ascii=False))
+    elif sys.argv[1:2] == ["apagar"] and len(sys.argv) == 4 and sys.argv[3] == "--confirmo":
+        mig.apagar_clinica(n.Banco(dados), sys.argv[2])
+        print(f"{sys.argv[2]}: apagada (não tem volta; exporte antes)")
     elif sys.argv[1:2] == ["backup"] and len(sys.argv) == 3:
         n.Banco(dados).copia_segura(sys.argv[2])
         print("backup em", sys.argv[2])

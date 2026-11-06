@@ -141,7 +141,7 @@ def home(repo_url: str, demo: bool, erro: str = "", nicho: str = nx.PADRAO) -> s
 <button>Criar grátis</button></form>
 {f'<p><a href="/c/{H["demo_slug"]}">{H["demo"]}</a> (dados fictícios; agentes podem testar a API nela).</p>' if demo else ''}
 <footer>Código-fonte: <a href="{e(repo_url)}">{e(repo_url)}</a> · <a href="/privacidade">Privacidade</a></footer>""",
-        desc=H["desc"], nav='<a href="/docs">Para agentes</a><a href="/entrar">Entrar</a>', fundo=H["fundo"], modo="heroi",
+        desc=H["desc"], nav='<a href="/docs">Para agentes</a><a href="/devs">Para devs</a><a href="/entrar">Entrar</a>', fundo=H["fundo"], modo="heroi",
         heroi=(f'<span class="kicker">Grátis · código aberto (MIT)</span><h1>{H["h1"]}</h1><p>{H["p"]}</p>'
                f'<div class="acoes"><a class="btn grande" href="#criar">{H["criar"]}</a>'
                + (f'<a class="btn grande sec" href="/c/{H["demo_slug"]}">Ver a demonstração</a>' if demo else "") + '</div>'))
@@ -373,6 +373,7 @@ def painel_api(c, tok: str, chaves: list[dict], base: str, nova: dict | None = N
 <h2>Chaves de API</h2><div class="cartao">{f'<table><tr><th>Nome</th><th>Chave</th><th>Escopo</th><th>Último uso</th><th></th></tr>{linhas}</table>' if linhas else "<p class='mudo'>Nenhuma chave ainda.</p>"}</div>
 <form method="post" action="/painel/acao" class="cartao">{_csrf(tok)}<input type="hidden" name="acao" value="criar_chave"><input type="hidden" name="volta" value="/painel/api">
 <div class="linha"><label>Nome<input name="nome" placeholder="meu agente" required></label><label>Escopo<select name="escopo"><option value="leitura">leitura (só consulta)</option><option value="escrita">escrita (cancela, remarca, bloqueia, configura)</option></select></label><button class="fixo">Criar chave</button></div></form>
+<h2>Levar seus dados</h2><p>Exporte a clínica em JSON para migrar para o seu servidor (<a href="/devs">como</a>): <a href="/painel/exportar">sem pacientes</a> · <a href="/painel/exportar?com_pacientes=1">com pacientes</a> (dado pessoal: guarde com cuidado). Nunca leva senha nem chaves.</p>
 <h2>Conectar um agente (MCP)</h2><pre>{e(cfg)}</pre><p class="mudo">Endereço do MCP: <code>{e(base)}/mcp</code> · OpenAPI: <a href="/openapi.json">{e(base)}/openapi.json</a> · <a href="/docs">guia completo</a>. Sua clínica: <code>{e(c['slug'])}</code>.</p>
 <div class="aviso">Trate a chave como senha: quem a tem acessa nomes e telefones dos pacientes. Revogue no primeiro sinal de vazamento.</div>""",
                   indexar=False, marca=c["nome"], home="/painel", nav=_nav_painel(c))
@@ -432,3 +433,28 @@ def sem_lembrete(ag: dict, clinica: dict, feito: bool) -> str:
              f"<p class='mudo'>Não foi você que agendou? <a href='/m/{e(ag['codigo'])}'>Cancele {V['a_consulta']} aqui</a>.</p>")
     return pagina(f"Lembretes — {clinica['nome']}", corpo, indexar=False, marca=clinica["nome"], home=f"/c/{clinica['slug']}",
                   fundo=fundo_de(clinica["slug"], clinica), modo="vidro")
+
+
+# ------------------------------------------------------------------ para quem desenvolve
+
+def devs(repo_url: str, base: str) -> str:
+    return pagina("Para devs — rode no seu servidor ou use o nosso", f"""<h1>Para devs</h1>
+<p>O agenda-clinica é <b>software livre (MIT)</b>: Python e SQLite, sem dependência externa. Você pode usar o nosso servidor, rodar o seu, ou começar aqui e migrar depois.</p>
+<div class="grade">
+<div class="cartao"><b>1 · Código</b><p class="mudo"><a href="{e(repo_url)}">{e(repo_url)}</a><br>Licença MIT. <code>nichos.json</code> é a única coisa que muda de um tipo de negócio para outro: nicho novo é dado, não código.</p></div>
+<div class="cartao"><b>2 · Rodar no seu servidor</b><pre>docker build -t agenda-clinica .
+docker run -d -p 8080:8080 -v agenda:/data \\
+  -e BASE_URL=https://agenda.seudominio.com \\
+  agenda-clinica</pre><p class="mudo">Ou sem Docker: <code>python3 app.py</code> (Python 3.12). Os dados ficam em <code>/data</code> (um arquivo SQLite); <code>python3 app.py backup arquivo.db</code> faz cópia consistente com o serviço no ar.</p></div>
+<div class="cartao"><b>3 · Migrar do nosso para o seu</b><pre># no painel: Agentes e API → Levar seus dados, ou:
+curl -H 'Authorization: Bearer ac_...' \\
+  '{e(base)}/api/v1/exportar?com_pacientes=true' &gt; clinica.json
+
+# no seu servidor:
+AGENDA_EMAIL=voce@x.com AGENDA_SENHA=... \\
+  python3 app.py importar clinica.json</pre><p class="mudo">O arquivo não leva senha, chaves nem sessões: você define o login novo na importação. Com pacientes, os links <code>/m/código</code> continuam valendo. Importar não liga o WhatsApp: cada servidor usa o seu Evolution. Se algo no arquivo falhar, nada é importado.</p></div>
+<div class="cartao"><b>4 · Gerenciar por API ou MCP</b><p class="mudo">Cada clínica tem chaves de API (escopo leitura ou escrita) no painel. Aponte o seu agente para <code>{e(base)}/mcp</code> (ou para o seu servidor: é o mesmo contrato). <a href="/docs">Guia e operações</a> · <a href="/openapi.json">OpenAPI</a> · <a href="/llms.txt">llms.txt</a>.</p></div>
+</div>
+<div class="aviso"><b>Dado de paciente é da clínica</b> (LGPD): quem hospeda é operador, não dono. Ao migrar, apague do servidor antigo o que não precisa mais: <code>python3 app.py apagar &lt;slug&gt; --confirmo</code> (não tem volta; exporte antes).</div>""",
+                  desc="Código aberto (MIT), como rodar no seu servidor, exportar e importar uma clínica e gerenciar por API ou MCP.", canonical=f"{base}/devs" if base else "",
+                  nav='<a href="/">Início</a><a href="/docs">Para agentes</a>', fundo="minimalista", modo="vidro")

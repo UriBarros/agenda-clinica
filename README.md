@@ -75,6 +75,15 @@ O mesmo motor atende outros tipos de negócio com hora marcada. O que muda por n
 - **Catraca de tamanho:** `tamanho.json` guarda o teto de linhas do código e de bytes do JSON e o peso das fotos; o teto só desce (`tests/test_tamanho.py`).
 - A política de privacidade e o painel do dono ainda usam o texto de clínica para todos os nichos (dívida declarada).
 
+## Para devs: rodar no seu servidor, migrar e gerenciar
+
+A página `/devs` do serviço resume isto. Código MIT, Python 3.12 e SQLite, nada externo.
+
+- **Rodar:** `docker compose up -d` (arquivo `docker-compose.yml` aqui) ou `python3 app.py`. Os dados são um arquivo SQLite em `DATA_DIR`; `python3 app.py backup arquivo.db` copia com o serviço no ar.
+- **Migrar de um servidor para outro:** no servidor de origem, `python3 app.py exportar <slug> [--com-pacientes] > clinica.json` (ou, pela API, `GET /api/v1/exportar?com_pacientes=true` com chave de leitura; ou no painel, "Agentes e API → Levar seus dados"). No destino: `AGENDA_EMAIL=... AGENDA_SENHA=... python3 app.py importar clinica.json`. O arquivo é versionado (`agenda-clinica/1`) e **nunca leva senha, chaves, sessões nem a instância do WhatsApp**; o login novo é o que você define ao importar, e o WhatsApp não é ligado. Com pacientes, o código de cada consulta vai junto e os links `/m/<código>` continuam valendo. Arquivo com defeito: nada é importado (desfaz tudo). Código de consulta que já existe no destino é pulado, nunca sobrescrito.
+- **Apagar o que ficou no servidor antigo:** `python3 app.py apagar <slug> --confirmo` (sem volta: exporte antes). Dado de paciente é da clínica (LGPD); quem hospeda é operador.
+- **Gerenciar por API ou MCP:** chaves por clínica no painel (leitura ou escrita); o mesmo contrato vale no nosso servidor e no seu (`/mcp`, `/openapi.json`).
+
 ## Lembrete por WhatsApp (Evolution) — leia o risco
 
 Opcional e **desligado por padrão**. Cada agendamento pode gerar **1 confirmação e 1 lembrete** por WhatsApp, enviados pela instância do [Evolution API](https://github.com/EvolutionAPI/evolution-api) que **a própria clínica conectou** (o QR é lido no Evolution, não aqui).

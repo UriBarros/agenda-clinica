@@ -1,0 +1,14 @@
+# Sobe o agenda-clinica no seu servidor: `docker compose up -d` e abra http://localhost:8080.
+# Troque BASE_URL pelo endereço público (os links das mensagens e do sitemap saem dele). Os dados ficam no volume `agenda`.
+services:
+  agenda:
+    build: .
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    environment:
+      BASE_URL: "http://localhost:8080"
+      DEMO: "1"            # cria as demonstrações (/c/demo, /c/demo-barbearia); tire em produção
+      # EVOLUTION_URL / EVOLUTION_KEY: só se for ligar o lembrete por WhatsApp (leia o aviso de risco no README)
+    volumes: ["agenda:/data"]
+volumes:
+  agenda:
