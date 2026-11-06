@@ -230,7 +230,7 @@ def fazer_handler(app: App):
 
         def _foto(self, nome: str):
             # Lista fechada (as fotos do pool), nunca um caminho vindo da URL: `..` ou nome fora do pool é 404, sem tocar o disco.
-            if not nome.endswith(".jpg") or nome[:-4] not in pg.POOL:
+            if not nome.endswith(".jpg") or nome[:-4] not in pg.FOTOS_VALIDAS:
                 return self._enviar(404, "não encontrado", "text/plain; charset=utf-8")
             dados = FOTOS.get(nome)
             if dados is None:

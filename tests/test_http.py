@@ -286,7 +286,8 @@ def test_rota_de_foto_so_serve_o_pool_e_nunca_arquivo_pelo_caminho_da_url(srv, c
 def test_todo_arquivo_do_pool_existe_e_tem_credito_e_todo_credito_tem_arquivo():
     import paginas as pg
     arquivos = {p.stem for p in pg.FUNDOS_DIR.glob("*.jpg")}
-    assert arquivos == set(pg.POOL) == set(pg.CREDITOS), "foto sem crédito (ou crédito sem foto) vira foto sem autoria na página"
+    assert arquivos == pg.FOTOS_VALIDAS, "faltou a variante (cheia, -m ou -b) de alguma foto, ou sobrou arquivo fora da lista"
+    assert set(pg.POOL) == set(pg.CREDITOS), "foto sem crédito (ou crédito sem foto) vira foto sem autoria na página"
     for c in pg.CREDITOS.values():
         assert c["fonte"] in ("Unsplash", "Pexels") and c["fotografo"] and c["pagina"].startswith("https://") and c["alt"]
 
@@ -300,7 +301,8 @@ def test_cada_clinica_ganha_a_mesma_foto_sempre_e_a_pagina_mostra_o_credito(srv)
         assert st == 200 and "/static/fundos/" in html and 'href="/creditos"' in html, caminho
     _, h1, _ = req(porta, "GET", "/c/demo")
     _, h2, _ = req(porta, "GET", "/c/demo")
-    assert re.search(r"/static/fundos/([a-z-]+)\.jpg", h1).group(1) == re.search(r"/static/fundos/([a-z-]+)\.jpg", h2).group(1) == pg.fundo_de("demo")
+    nome = lambda h: re.search(r"/static/fundos/([a-z-]+?)(?:-m|-b)?\.jpg", h).group(1)  # tira o sufixo da variante
+    assert nome(h1) == nome(h2) == pg.fundo_de("demo")
 
 
 def test_pagina_de_creditos_lista_todas_as_fotos_com_link_do_autor(srv):
@@ -318,3 +320,52 @@ def test_painel_continua_limpo_sem_foto_e_a_csp_continua_sem_script(srv):
     c = n.clinica_por_slug(a.bd, "demo")
     import paginas as pg
     assert "/static/fundos/" not in pg.painel(c, "tok", __import__("datetime").date.today(), [], [], [])  # tela de trabalho: sem foto
+
+
+# ---------------------------------------------------------------- versão leve (celular simples travava com desfoque ao vivo)
+
+def test_css_nao_tem_desfoque_em_tempo_real_que_trava_celular_simples():
+    import paginas as pg
+    assert "backdrop-filter" not in pg.CSS and "filter:blur" not in pg.CSS
+
+
+@pytest.mark.parametrize("sufixo", ["-m", "-b"])
+def test_variantes_leves_da_foto_sao_servidas_como_jpeg(srv, sufixo):
+    porta, _ = srv
+    c = http.client.HTTPConnection("127.0.0.1", porta, timeout=10)
+    c.request("GET", f"/static/fundos/psicologia{sufixo}.jpg")
+    r = c.getresponse()
+    corpo = r.read()
+    c.close()
+    assert r.status == 200 and r.getheader("Content-Type") == "image/jpeg" and corpo[:3] == b"\xff\xd8\xff"
+
+
+def test_cada_foto_tem_celular_bem_menor_que_a_cheia_e_desfocada_minuscula():
+    import paginas as pg
+    for nome in pg.POOL:
+        cheia, m, b = [(pg.FUNDOS_DIR / f"{nome}{s}.jpg").stat().st_size for s in ("", "-m", "-b")]
+        assert m < cheia * 0.6, f"{nome}: a versão de celular quase não emagreceu"
+        assert b < 30_000, f"{nome}: a desfocada passou de 30 KB"
+
+
+def test_pagina_de_tarefa_usa_a_foto_ja_desfocada_e_o_heroi_usa_celular_e_cheia(srv):
+    import paginas as pg
+    porta, _ = srv
+    foto = pg.fundo_de("demo")
+    _, tarefa, _ = req(porta, "GET", "/c/demo/agendar")
+    assert f"/static/fundos/{foto}-b.jpg" in tarefa and f"/static/fundos/{foto}.jpg" not in tarefa
+    _, heroi, _ = req(porta, "GET", "/c/demo")
+    assert f"/static/fundos/{foto}-m.jpg" in heroi and f"/static/fundos/{foto}.jpg" in heroi and "-b.jpg" not in heroi
+
+
+def test_css_do_fundo_nao_usa_atalho_background_que_apaga_a_foto_definida_antes():
+    """O atalho `background:` zera o `background-image` de um bloco anterior: o herói saiu sem foto em 06/11 (só o gradiente)."""
+    import paginas as pg
+    regra = re.search(r"\.fundo\{[^}]*\}", pg.CSS).group(0)
+    assert "background:" not in regra and "background-size:cover" in regra
+
+
+def test_heroi_declara_a_foto_depois_do_css_base_para_ela_valer(srv):
+    porta, _ = srv
+    _, html, _ = req(porta, "GET", "/c/demo")
+    assert re.search(r"\.fundo\{background-image:url\(/static/fundos/[a-z-]+-m\.jpg\)\}", html)

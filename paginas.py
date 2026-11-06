@@ -27,14 +27,19 @@ except (OSError, ValueError):
     CREDITOS = {}
 
 
+# Cada foto tem 3 arquivos: cheia (desktop), "-m" (celular, 800 px) e "-b" (já desfocada, para as páginas de tarefa). O desfoque é feito UMA vez,
+# na geração do arquivo: `filter: blur` ao vivo num elemento de tela cheia travava celular simples.
+FOTOS_VALIDAS = {f"{p}{suf}" for p in POOL for suf in ("", "-m", "-b")}
+
+
 def fundo_de(chave: str) -> str:
     return POOL[int(hashlib.sha256(str(chave).encode()).hexdigest(), 16) % len(POOL)]
 DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]
 CSS = """
 :root{--bg:#f1f6f5;--cartao:#fff;--tinta:#10292a;--mudo:#587170;--linha:#d6e3e1;--c:#0f766e;--c2:#0b5a54;--aviso:#fff4d6;--erro:#b42318;--ok:#067647;
---vidro:rgba(247,251,250,.86);--vidro-borda:rgba(255,255,255,.7);--sombra:0 24px 60px rgba(6,32,32,.22)}
+--vidro:rgba(247,251,250,.94);--vidro-borda:rgba(255,255,255,.7);--sombra:0 24px 60px rgba(6,32,32,.22)}
 @media(prefers-color-scheme:dark){:root{--bg:#0a1514;--cartao:#112221;--tinta:#e6f1f0;--mudo:#93aeac;--linha:#27403e;--c:#2dd4bf;--c2:#5eead4;--aviso:#3b3115;--erro:#f97066;--ok:#47cd89;
---vidro:rgba(10,22,21,.80);--vidro-borda:rgba(255,255,255,.10);--sombra:0 24px 60px rgba(0,0,0,.5)}}
+--vidro:rgba(10,22,21,.92);--vidro-borda:rgba(255,255,255,.10);--sombra:0 24px 60px rgba(0,0,0,.5)}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tinta);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:var(--c)}main{max-width:920px;margin:0 auto;padding:22px 16px 56px}h1{font-size:clamp(1.9rem,5vw,2.4rem);line-height:1.15;letter-spacing:-.02em;margin:.2em 0}h2{font-size:1.3rem;letter-spacing:-.01em;margin:1.7em 0 .5em}
 header.topo{background:var(--cartao);border-bottom:1px solid var(--linha)}header.topo div{max-width:1040px;margin:0 auto;padding:14px 18px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
@@ -55,16 +60,16 @@ code,pre{background:var(--cartao);border:1px solid var(--linha);border-radius:8p
 .pill{display:inline-block;border-radius:99px;padding:3px 12px;font-size:.82rem;border:1.5px solid var(--linha);text-decoration:none;margin:2px 0}a.pill:hover{border-color:var(--c)}footer{margin-top:40px;color:var(--mudo);font-size:.88rem}
 form.in{display:inline}.sr{position:absolute;left:-9999px}
 /* ---- imersivo: foto de fundo fixa, herói e folha de vidro */
-.fundo{position:fixed;inset:0;z-index:-2;background:#0b2b2a center/cover no-repeat}
+.fundo{position:fixed;inset:0;z-index:-2;background-color:#0b2b2a;background-position:center;background-size:cover;background-repeat:no-repeat}
 .fundo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(3,20,22,.42) 0%,rgba(3,20,22,.66) 50%,rgba(3,20,22,.9) 100%)}
-body.vidro .fundo{filter:blur(9px) saturate(1.1);transform:scale(1.07)}body.vidro .fundo::after{background:linear-gradient(180deg,rgba(3,20,22,.5),rgba(3,20,22,.78))}
+body.vidro .fundo::after{background:linear-gradient(180deg,rgba(3,20,22,.5),rgba(3,20,22,.78))}
 body.imersivo header.topo{background:transparent;border:0;position:absolute;left:0;right:0;top:0;z-index:3}body.imersivo header.topo a,body.imersivo header.topo b a{color:#fff!important;text-shadow:0 1px 12px rgba(0,0,0,.5)}
-body.vidro header.topo{background:rgba(3,20,22,.35);backdrop-filter:blur(14px);border:0;position:sticky;top:0;z-index:3}body.vidro header.topo a,body.vidro header.topo b a{color:#fff!important}
+body.vidro header.topo{background:rgba(3,20,22,.6);border:0;position:sticky;top:0;z-index:3}body.vidro header.topo a,body.vidro header.topo b a{color:#fff!important}
 .heroi{min-height:78vh;display:flex;flex-direction:column;justify-content:flex-end;max-width:1040px;margin:0 auto;padding:110px 22px 56px;color:#fff}
 .heroi h1{font-size:clamp(2.3rem,7vw,4rem);line-height:1.05;margin:.15em 0 .3em;text-shadow:0 4px 34px rgba(0,0,0,.5)}.heroi p{font-size:clamp(1.05rem,2.4vw,1.3rem);max-width:640px;margin:.2em 0 1em;text-shadow:0 2px 22px rgba(0,0,0,.5)}
-.heroi .kicker{align-self:flex-start;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);backdrop-filter:blur(8px);border-radius:99px;padding:5px 14px;font-size:.9rem;font-weight:600}
-.heroi .acoes{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}.heroi .btn.sec{color:#fff!important;border-color:rgba(255,255,255,.75)!important;background:rgba(255,255,255,.12)!important;backdrop-filter:blur(8px)}
-.folha{background:var(--vidro);backdrop-filter:blur(22px) saturate(1.25);-webkit-backdrop-filter:blur(22px) saturate(1.25);border:1px solid var(--vidro-borda);border-bottom:0;border-radius:34px 34px 0 0;box-shadow:var(--sombra);max-width:1040px;margin:0 auto;padding:30px 22px 64px}
+.heroi .kicker{align-self:flex-start;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);border-radius:99px;padding:5px 14px;font-size:.9rem;font-weight:600}
+.heroi .acoes{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}.heroi .btn.sec{color:#fff!important;border-color:rgba(255,255,255,.75)!important;background:rgba(255,255,255,.12)!important;}
+.folha{background:var(--vidro);border:1px solid var(--vidro-borda);border-bottom:0;border-radius:34px 34px 0 0;box-shadow:var(--sombra);max-width:1040px;margin:0 auto;padding:30px 22px 64px}
 .folha.cheia{max-width:760px;margin:26px auto 70px;border-radius:30px;border-bottom:1px solid var(--vidro-borda);padding:26px 22px 34px}
 .folha .cartao{background:color-mix(in srgb,var(--cartao) 88%,transparent)}
 .credito{font-size:11px;color:#fff;opacity:.88;background:rgba(0,0,0,.38);padding:3px 10px;border-radius:99px;white-space:nowrap}.credito a{color:#fff}
@@ -80,10 +85,16 @@ def pagina(titulo: str, corpo: str, *, desc: str = "", canonical: str = "", inde
     meta += f'<link rel="canonical" href="{e(canonical)}">' if canonical else ""
     meta += "" if indexar else '<meta name="robots" content="noindex">'
     foto = fundo if (fundo in POOL and modo != "limpo") else ""
-    if foto:
-        meta += f'<link rel="preload" as="image" href="/static/fundos/{foto}.jpg">'
     cor = CREDITOS.get(foto, {}).get("cor", "#0b2b2a")
-    camada = (f'<div class="fundo" style="background-image:url(/static/fundos/{foto}.jpg);background-color:{e(cor)}"></div>') if foto else ""
+    camada = ""
+    if foto and modo == "vidro":  # tarefa: a foto já desfocada (10 a 17 KB), sem filtro no navegador
+        meta += f'<link rel="preload" as="image" href="/static/fundos/{foto}-b.jpg">'
+        camada = f'<div class="fundo" style="background-image:url(/static/fundos/{foto}-b.jpg);background-color:{e(cor)}"></div>'
+    elif foto:  # herói: 800 px no celular (23 a 67 KB), cheia só de 701 px para cima
+        meta += (f'<link rel="preload" as="image" href="/static/fundos/{foto}-m.jpg" media="(max-width:700px)">'
+                 f'<link rel="preload" as="image" href="/static/fundos/{foto}.jpg" media="(min-width:701px)">'
+                 f'<style>.fundo{{background-image:url(/static/fundos/{foto}-m.jpg)}}@media(min-width:701px){{.fundo{{background-image:url(/static/fundos/{foto}.jpg)}}}}</style>')
+        camada = f'<div class="fundo" style="background-color:{e(cor)}"></div>'
     cr = CREDITOS.get(foto)
     credito = (f'Foto: <a href="/creditos">{e(cr["fotografo"])}</a> · {e(cr["fonte"])}') if foto and cr else ""
     cab = (f'<header class="topo"><div><b><a href="{e(home)}" style="color:inherit">{e(marca)}</a></b>{nav}</div></header>')
